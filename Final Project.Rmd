@@ -24,7 +24,19 @@ library(glmnet)
 
 #1 Background
 
-#2 Problem To Be Answered
+The main dataset is the transaction record of a bakery (https://www.kaggle.com/sulmansarwar/transactions-from-a-bakery). Though not specified in the description of the dataset, it is implied that this bakery is located in the old town of Edinburgh, UK. The dataset is downloaded from kaggle and stored following the same path as this R markdown file.
+
+In order to supplement the dataset with more features, we extract the historical weather records from Meteostat (https://dev.meteostat.net/python/hourly.html#response-parameters). We use the weather data recorded by a weather station in Edinburgh Airport, which is about 8 miles away from the Edinburgh old town. The dataset is downloaded and stored under the same path of this R markdown file.
+
+#2 Questions To Be Answered
+
+Combining the bakery transaction record and the historical weather record, there are few questions we could further explore, such as:
+
+1. Knowing the date, hour, and weather forecast, to predict the number of transactions during that specific hour.
+
+2. Knowing the date, hour, weather forecast and other information, to predict whether a transaction will include the purchase of any kind of bread.
+
+3. Is it possible to categorize the transactions into several clusters?
 
 #3 Data Cleaning and Wangling
 
@@ -294,15 +306,75 @@ ggcorrplot(corr, type = "lower",
 
 The correlation table suggests possible correlation between the temperature and the humidity, and between the temperature and the speed of wind.
 
+## 3.5 Dataset Construction
+
+### 3.5.1 Predict Transactions By Date and Hour
+
 ```{r}
 # To build the dataset for the regression problem
 
-# To build the dataset for the classification problem
+df_merged_reg <- ddply(df_merged, .(Date, Hour), summarise, No_of_transaction = length(unique(Transaction)))
 
-# To build the dataset for the clustering problem - if possible
+df_merged_temp <- subset(df_merged, select = -c(Transaction, Item, Item_Type))
 
+df_merged_reg <- merge(x = df_merged_reg,
+                       y = df_merged_temp,
+                       by = c('Date', 'Hour'))
+
+df_merged_reg <- distinct(df_merged_reg)
+
+summary(df_merged_reg)
+```
+
+
+### 3.5.2 Classify Transactions By Weather It Includes Coffee
+
+```{r}
+
+df_merged_clas <- df_merged
+
+df_merged_clas$Coffee <- ifelse(df_merged_clas$Item == 'Coffee', 1, 0)
+
+df_merged_clas <- ddply(df_merged_clas, ~Transaction, summarise, Has_Coffee = sum(Coffee))
+
+df_merged_temp <- subset(df_merged, select = -c(Item, Item_Type))
+
+df_merged_clas <- merge(x = df_merged_clas,
+                       y = df_merged_temp,
+                       by = 'Transaction')
+
+df_merged_clas <- distinct(df_merged_clas)
+
+summary(df_merged_clas)
 
 ```
+
+For the classification problem, we will look at the distribution of the class to see if it is imbalanced.
+
+```{r}
+table(df_merged_clas$Has_Coffee)
+```
+
+### 3.5.3 Study The Clusters of Transactions
+
+On top of the database constructed during chapter 3.5.2, here we will add the number of type of items for each transaction.
+
+```{r}
+df_merged_cluster <- ddply(df_merged,
+                           ~Transaction,
+                           summarise,
+                           No_Item_Type = length(unique(Item)))
+
+df_merged_cluster <- merge(x = df_merged_cluster,
+                           y = df_merged_clas,
+                           by = 'Transaction')
+
+df_merged_cluster <- distinct(df_merged_cluster)
+
+summary(df_merged_cluster)
+
+```
+
 
 # 4. Model
 
