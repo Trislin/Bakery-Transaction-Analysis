@@ -20,6 +20,13 @@ library(ggcorrplot)
 library(knitr)
 library(splines)
 library(glmnet)
+library(gridExtra)
+library(grid)
+library(RColorBrewer)
+nb.cols <- 18
+mycolors <- colorRampPalette(brewer.pal(8, "Blues"))(nb.cols)
+cookiecol<-c('#ad6a1d','#9a5327','#cc8d4a','#4e1703','#ecc78d','#2e0a05','#d0dfe4','#33575b', '#173742')
+
 ```
 
 #1 Background
@@ -112,9 +119,12 @@ df$Weekday <- factor(df$Weekday,
 
 res <- ddply(df, ~Weekday, summarise, No_of_transaction = length(unique(Transaction)))
 
-ggplot(data = res, mapping = aes(x = Weekday, y = No_of_transaction)) +
-  geom_bar(stat = 'identity') +
-  labs(title = 'No. of Transactions by Weekdays', x = 'Weekdays', y = 'Number of Transactions')
+ggplot(data = res, mapping = aes(x = Weekday, y = No_of_transaction, fill = Weekday)) +
+  geom_bar(stat = 'identity',width=0.7,alpha=0.8) +
+  labs(title = 'No. of Transactions by Weekdays', x = 'Weekdays', y = 'Number of Transactions') +
+  scale_fill_brewer(palette = "Blues") +
+  theme_minimal()
+
 
 
 ```
@@ -125,9 +135,14 @@ As expected, there are more transactions on Saturday. However, the number transa
 ```{r}
 res <- ddply(df, .(Weekday, Hour), summarise, No_of_transaction = length(unique(Transaction)))
 
-ggplot(data = res, mapping = aes(x = as.factor(Hour), y = No_of_transaction)) +
-  geom_bar(stat = "identity") + facet_wrap(~ Weekday) +
-  labs(title = 'No. of Transactions by Hour by Weekdays', x = 'Hours', y = 'Number of Transactions')
+ggplot(data = res, mapping = aes(x = as.factor(Hour), y = No_of_transaction, fill = as.factor(Hour))) +
+  geom_bar(stat = "identity",alpha=0.8) + facet_wrap(~ Weekday) +
+  labs(title = 'No. of Transactions by Hour by Weekdays', x = 'Hours', y = 'Number of Transactions') +
+  scale_fill_manual(values = mycolors) +
+  theme_minimal() + 
+  theme(legend.position = "none",
+axis.text = element_text(size=8),
+)
 
 ```
 
@@ -148,17 +163,20 @@ From the figure presented in 3.2.2, we noticed that there are few transactions a
 
 ```{r}
 res <- ddply(df, ~Hour, summarise, No_of_transaction = length(unique(Transaction)))
-ggplot(data = res, mapping = aes(x = as.factor(Hour), y = No_of_transaction)) +
-  geom_bar(stat = 'identity') +
-  labs(title = 'No. of Transactions by Hour', x = 'Hours', y = 'Number of Transactions')
+ggplot(data = res, mapping = aes(x = as.factor(Hour), y = No_of_transaction, fill = as.factor(Hour))) +
+  geom_bar(stat = 'identity',alpha=0.8) +
+  labs(title = 'No. of Transactions by Hour', x = 'Hours', y = 'Number of Transactions') +
+  scale_fill_manual(values = mycolors) +
+  theme_minimal() +
+  theme(legend.position = "none")
+
 
 ```
 
 Considering the small amount of transactions associated with abnormal hours, we will drop the rows whose hours is outside a normal business operating time. In other words, we will drop rows whose hour is 1, 21, 22, or 23 from our dataset.
 
 ```{r}
-df <- df[df$Hour > 1, ]
-df <- df[df$Hour < 21, ]
+df <- df%>%filter(Hour<21&Hour>1)
 ```
 
 Another observation is that the amount of transaction within an hour varies by the time of the day. Here we split the day into two segments: rush hours from 9 to 15 and non-rush hours for the rest of the day. Such split makes sense practically as the period from 9 to 15 covers breakfast, lunch, and coffee or tea time in the afternoon.
@@ -175,6 +193,29 @@ df$Rush_hours <- mapvalues(df$Hour,
 ```
 
 ### 3.2.4 List of Purchased Items
+We also want to take a look at sales during holidays. We will focus on two holidays, Christmas and New Year. 
+0 = non-holiday
+1 = Christmas|New Year （12/24/2016 - 1/1/2017)
+Bakery did not open on 12/25/2016, 12/26/2016, 1/1/2017
+
+```{r}
+df$Holiday<-0
+df$Holiday[df$Date>'2016-12-23'&df$Date<'2017-01-02']<-1
+hol<-df%>%group_by(Holiday)%>%summarize(mean_transaction = length(unique(Transaction))/length(unique(Date)))
+hol%>%ggplot(aes(as.factor(Holiday),mean_transaction, fill = as.factor(Holiday),label = round(mean_transaction,2))) +
+  labs(title = 'Average No. of Transactions by Holiday', x = 'Holiday', y = 'Average Number of Transactions') +
+  geom_bar(stat = 'identity', width = 0.5,alpha=0.8) +
+  geom_text(vjust = -0.5) +
+  scale_fill_manual(values = cookiecol[c(5,7)]) +
+  theme_minimal()
+
+  
+
+```
+
+
+
+### 3.2.5 List of Purchased Items
 
 Then we will focus on the "Item" column to understand what are included.
 
@@ -186,46 +227,124 @@ This list of itme seems to be inconsistent and confusing. For example, there are
 
 The item type "Adjustment" and "None" are probably introduced by the transaction tracking system or the cashier. In other words, there is no real purchase behind each of them. So we will drop them from the dataset. 
 
+Item_Type is reorganized and coded as following: 
+Bread = 1
+Cookies = 2
+Cake|Pastry|Sweets = 3
+Coffee = 4
+Tea = 5
+Hot chocolate|Smoothie|Juice = 6
+Other beverage = 7
+Meal = 8
+Other = 9 
+*Ambiguous items are coded as 'Other'
+
 ```{r}
-df <- df[df$Item != 'NONE', ]
-df <- df[df$Item != 'Adjustment', ]
+df <- df %>% filter(Item!='NONE' & Item!='Adjustment')
+df$Item_Type <- 9
+df$Item_Type[df$Item%in%c('Bread', 'Farm House', 'Toast','Baguette','Focaccia')]<-1
+df$Item_Type[df$Item == 'Cookies']<-2
+df$Item_Type[df$Item%in%c('Cake','Pastry','Medialuna','Brownie','Muffin','Alfajores','Scone','Scandinavian','Truffles','Tiffin','Fudge','Jammie Dodgers','Bakewell','Tartine','Vegan mincepie')]<-3
+df$Item_Type[df$Item == 'Coffee']<-4
+df$Item_Type[df$Item == 'Tea']<-5
+df$Item_Type[df$Item%in%c('Hot chocolate', 'Juice', 'Smoothies')]<-6
+df$Item_Type[df$Item%in%c('Mineral water', 'Coke')]<-7
+df$Item_Type[df$Item%in%c('Sandwich', 'Soup', 'Spanish Brunch', 'Chicken Stew', 'Salad','Frittata')]<-8
+df$Item_Type<-as.factor(df$Item_Type)
+df%>%group_by(Item_Type)%>%
+  summarize(Count = n()) %>%
+  ggplot(aes(x=Item_Type,y=Count,fill=Item_Type,label = Count)) +
+  geom_bar(stat="identity", width=0.7,alpha=0.7) +
+  theme_minimal() + 
+  scale_fill_manual(values = cookiecol,labels = c("1:Bread", "2:Cookies", "3:Cake|Pastry|Sweets",'4:Coffee','5:Tea','6:Hot chocolate|Smoothie|Juice','7:Other beverage','8:Meal','9:Other')) +
+  geom_text(vjust = -0.5,size=3) + 
+  labs(title = 'Item Frequency in Unique Transactions', x = 'Item Type', y = 'Average Number of Transactions') 
+```
+From the Figure above, cakes/pastries/sweets are the most popular items in the bakery, followed by Coffee and Bread.
 
-df$Item_Type <- mapvalues(df$Item,
-                          from = c("Medialuna",
-                                   "Brownie",
-                                   "Farm House",
-                                   "Scone",
-                                   "Muffin",
-                                   "Alfajores",
-                                   "Toast",
-                                   "Tiffin",
-                                   "Scandinavian",
-                                   "Baguette"),
-                          to = c("Pastry",
-                                 "Cake",
-                                 "Bread",
-                                 "Pastry",
-                                 "Cake",
-                                 "Cake",
-                                 "Bread",
-                                 "Cake",
-                                 "Pastry",
-                                 "Bread"))
+We also want to see if the transaction of each item varies by the hours in the day. We decided to focus on bread, cookies, cake/pastry/sweets, coffee and tea. 
+```{r}
+
+bread<-df%>%filter(Item_Type==1)%>%
+  group_by(as.factor(Hour))%>%
+  mutate(Avg_No_of_transaction = length(unique(Transaction))/length(unique(df$Transaction))) %>%
+  ggplot(aes(x = as.factor(Hour), y = Avg_No_of_transaction, fill = as.factor(Hour))) +
+  geom_bar(stat = 'identity',alpha=0.8) +
+  facet_wrap(~ Item_Type) +
+  labs(title = 'Average Number of Transactions of Bread by Hour', x = 'Hours', y = 'Avg No. of Transaction') +
+  scale_fill_manual(values = colorRampPalette(c('#ecc78d','#2e0a05'))(nb.cols)) +
+  theme_minimal() +
+  theme(legend.position = "none",
+plot.title = element_text(size=8),
+axis.title.x = element_text(size=8),
+axis.title.y = element_text(size=8)
+)
 
 
-Item_tb <- table(df$Item_Type)
-sort(Item_tb, decreasing = TRUE)[1:21]
+cookie<-df%>%filter(Item_Type==2)%>%
+  group_by(as.factor(Hour))%>%
+  mutate(Avg_No_of_transaction = length(unique(Transaction))/length(unique(df$Transaction))) %>%
+  ggplot(aes(x = as.factor(Hour), y = Avg_No_of_transaction, fill = as.factor(Hour))) +
+  geom_bar(stat = 'identity',alpha=0.8) +
+  labs(title = 'Average Number of Transactions of Cookies by Hour', x = 'Hours', y = 'Avg No. of Transaction') +
+  scale_fill_manual(values = colorRampPalette(c('#ecc78d','#2e0a05'))(nb.cols)) +
+  theme_minimal() +
+  theme(legend.position = "none",
+plot.title = element_text(size=8),
+axis.title.x = element_text(size=8),
+axis.title.y = element_text(size=8)
+)
 
-# if count(item) < 100 => Other
-# Lv 0: food / drink
-# Lv 1: bread / sweets / coffee / tea / other food / other drink
+pastry<-df%>%filter(Item_Type==3)%>%
+  group_by(as.factor(Hour))%>%
+  mutate(Avg_No_of_transaction = length(unique(Transaction))/length(unique(df$Transaction))) %>%
+  ggplot(aes(x = as.factor(Hour), y = Avg_No_of_transaction, fill = as.factor(Hour))) +
+  geom_bar(stat = 'identity',alpha=0.8) +
+  labs(title = 'Average Number of Transactions of Cakes/Pastries/Sweets by Hour', x = 'Hours', y = 'Avg No. of Transaction') +
+  scale_fill_manual(values = colorRampPalette(c('#ecc78d','#2e0a05'))(nb.cols)) +
+  theme_minimal() +
+  theme(legend.position = "none",
+plot.title = element_text(size=8),
+axis.title.x = element_text(size=8),
+axis.title.y = element_text(size=8)
+)
+
+coffee<-df%>%filter(Item_Type==4)%>%
+  group_by(as.factor(Hour))%>%
+  mutate(Avg_No_of_transaction = length(unique(Transaction))/length(unique(df$Transaction))) %>%
+  ggplot(aes(x = as.factor(Hour), y = Avg_No_of_transaction, fill = as.factor(Hour))) +
+  geom_bar(stat = 'identity',alpha=0.8) +
+  labs(title = 'Average Number of Transactions of Coffee by Hour', x = 'Hours', y = 'Avg No. of Transaction') +
+  scale_fill_manual(values = colorRampPalette(c('#ecc78d','#2e0a05'))(nb.cols)) +
+  theme_minimal() +
+  theme(legend.position = "none",
+plot.title = element_text(size=8),
+axis.title.x = element_text(size=8),
+axis.title.y = element_text(size=8)
+)
+
+tea<-df%>%filter(Item_Type==5)%>%
+  group_by(as.factor(Hour))%>%
+  mutate(Avg_No_of_transaction = length(unique(Transaction))/length(unique(df$Transaction))) %>%
+  ggplot(aes(x = as.factor(Hour), y = Avg_No_of_transaction, fill = as.factor(Hour))) +
+  geom_bar(stat = 'identity',alpha=0.8) +
+  labs(title = 'Average Number of Transactions of Tea by Hour', x = 'Hours', y = 'Avg No. of Transaction') +
+  scale_fill_manual(values = colorRampPalette(c('#ecc78d','#2e0a05'))(nb.cols)) +
+  theme_minimal() +
+  theme(legend.position = "none",
+plot.title = element_text(size=8),
+axis.title.x = element_text(size=8),
+axis.title.y = element_text(size=8)
+)
+
+grid.arrange(bread,cookie,pastry,coffee,tea, nrow=3,ncol=2,
+             top = textGrob("Average Transaction Frequency by Hours: Bread,Cookies,Pastries,Coffee, and Tea",gp=gpar(fontsize=14,font=3)))
+
 
 
 ```
 
-XXXXXXXXXXXXXXXXx
-
-
+The Figure above shows that bread and coffee on average tend to be sold more in the morning (~11am) while tea tends to be sold more in the afternoon. Transaction frequencies of cookies and cakes/pastries/sweet have peaks in both morning and afternoon. 
 
 
 ## 3.3 The Edinburgh Weather Record
@@ -299,16 +418,16 @@ corr <- round(cor(df_merged_feature), digits = 2)
 
 #Use ggcorrplot to graph correlation. Only plot the lower triangle of the correlation matrix.
 ggcorrplot(corr, type = "lower", 
-           ggtheme = ggplot2::theme_gray,
+           ggtheme = ggplot2::theme_minimal,
            lab = TRUE,
-           colors = c("dark green", "white", "dark red"))
+           colors = c(cookiecol[5],'white',cookiecol[7]))
 ```
 
 The correlation table suggests possible correlation between the temperature and the humidity, and between the temperature and the speed of wind.
 
 ## 3.5 Dataset Construction
 
-### 3.5.1 Predict Transactions By Date and Hour
+### 3.5.1 Predict Transactions By Date, Hour, and Weather Information
 
 ```{r}
 # To build the dataset for the regression problem
@@ -326,8 +445,37 @@ df_merged_reg <- distinct(df_merged_reg)
 summary(df_merged_reg)
 ```
 
+Next, we plot scatter plots of number of transaction against different weather features, respectively
+```{r}
+# scatter plots of number of transaction against different weather features, respectively
+temp<-df_merged_reg%>%ggplot(aes(temp,No_of_transaction)) + 
+  geom_jitter(alpha = 0.7, size=0.7, colour = cookiecol[3]) +
+  labs(x='Temperature in Celcius', y='Number of Transaction') + 
+  theme_minimal()
 
-### 3.5.2 Classify Transactions By Weather It Includes Coffee
+ws<-df_merged_reg%>%ggplot(aes(wspd,No_of_transaction)) + 
+  geom_jitter(alpha = 0.7, size=0.7, colour = cookiecol[3]) +
+  labs(x='Wind Speed', y='Number of Transaction') + 
+  theme_minimal()
+
+hum<-df_merged_reg%>%ggplot(aes(rhum,No_of_transaction)) + 
+  geom_jitter(alpha = 0.7, size=0.7, colour = cookiecol[3]) +
+  labs(x='Humidity', y='Number of Transaction') + 
+  theme_minimal()
+
+wcc<-df_merged_reg%>%ggplot(aes(coco,No_of_transaction)) + 
+  geom_jitter(alpha = 0.7, size=0.7, colour = cookiecol[3]) +
+  labs(x='Weather Condition Code', y='Number of Transaction') + 
+  theme_minimal()
+
+grid.arrange(temp,ws,hum,wcc, nrow = 2)
+
+
+
+```
+
+
+### 3.5.2 Classify Transactions By Whether it Includes Coffee (and/or other products-to be determined)
 
 ```{r}
 
