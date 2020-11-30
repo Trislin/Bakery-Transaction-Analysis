@@ -1,0 +1,310 @@
+---
+title: "Final Project - Bakery Transaction"
+author: "Shuoqi Zhang, Yijing Lin"
+date: "11/11/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+#Include the libraries we are going to need here
+library(caret)
+library(ggplot2)
+library(plyr)
+#library(tidyr)
+library(tidyverse)
+library(ggcorrplot)
+library(knitr)
+library(splines)
+library(glmnet)
+```
+
+#1 Background
+
+#2 Problem To Be Answered
+
+#3 Data Cleaning and Wangling
+
+## 3.1 Read The Dataset
+
+Firstly we will read the dataset of the bakery transaction record, and the hourly weather record in Edinburgh.
+
+```{r}
+df_ori <- read.csv(file = 'BreadBasket_DMS.csv',
+               header = TRUE,
+               encoding = 'utf-8')
+
+df_weather_ori <- read.csv(file = 'Edinburgh_weather_hourly.csv',
+                       header = TRUE,
+                       encoding = 'utf-8')
+
+```
+
+Then we display the first few rows of each data set.
+
+```{r}
+head(df_ori)
+head(df_weather_ori)
+```
+We will create the keys in order to merge two datasets.
+
+```{r}
+df <- df_ori
+df_weather <- df_weather_ori
+df$Date <- as.Date(df$Date, "%Y-%m-%d")
+df$Hour <- as.numeric(substr(df$Time, 1, 2))
+df$key <- paste(as.character(df$Date), "@", as.character(df$Hour))
+df_weather <- df_weather %>% separate(time, c("Date", "Hour_Minute"), " ")
+df_weather <- df_weather %>% separate(Hour_Minute, c("Hour", "Minute"), ":")
+df_weather$Date <- as.Date(df_weather$Date, "%m/%d/%Y")
+df_weather$Hour <- as.numeric(df_weather$Hour)
+df_weather$key <- paste(as.character(df_weather$Date), "@", as.character(df_weather$Hour))
+
+```
+
+## 3.2 The Bakery Transaction Record
+
+### 3.2.1 NA Values and Duplicated Rows
+
+Now we will deal with the data type and missing values, if any. We will start with the bakery transaction record database.
+
+```{r}
+summary(df)
+```
+
+There is no NAs. Then we will verify whether there are duplicated rows in the dataset
+
+```{r}
+dim(df[duplicated(df), ])[1]
+```
+
+There are duplicated rows. Considering that our analysis will not focus on the quantities of item sold, it is OK to remove those duplicated rows.
+
+```{r}
+df <- distinct(df)
+```
+
+### 3.2.2 Weekday vs. Weekend
+
+Given the nature of the bakery business, we may expect different behaviors during weekdays and weekends.
+
+```{r}
+df$Weekday <- weekdays(df$Date, abbreviate = TRUE)
+
+df$Weekday <- factor(df$Weekday, 
+                        levels = c('Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'))
+
+
+res <- ddply(df, ~Weekday, summarise, No_of_transaction = length(unique(Transaction)))
+
+ggplot(data = res, mapping = aes(x = Weekday, y = No_of_transaction)) +
+  geom_bar(stat = 'identity') +
+  labs(title = 'No. of Transactions by Weekdays', x = 'Weekdays', y = 'Number of Transactions')
+
+
+```
+
+As expected, there are more transactions on Saturday. However, the number transactions on Sunday seem to be low. To further understand what happened, we will look at the number of transactions by hour by weekdays.
+
+
+```{r}
+res <- ddply(df, .(Weekday, Hour), summarise, No_of_transaction = length(unique(Transaction)))
+
+ggplot(data = res, mapping = aes(x = as.factor(Hour), y = No_of_transaction)) +
+  geom_bar(stat = "identity") + facet_wrap(~ Weekday) +
+  labs(title = 'No. of Transactions by Hour by Weekdays', x = 'Hours', y = 'Number of Transactions')
+
+```
+
+Looking at the distribution of transactions by hours, we noticed that the trend for Saturday and Sunday are similar and are different from the rest of the week. Therefore, it makes sense to group Saturday and Sunday together, though Sunday has less transactions comparing with Saturday.
+
+```{r}
+df$Weekend <- mapvalues(df$Weekday,
+                        from = c('Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'),
+                        to = c(0, 0, 0, 0, 0, 1, 1))
+
+df$Weekend <- as.numeric(as.character(df$Weekend))
+
+```
+
+### 3.2.3 Hours of The Day
+
+From the figure presented in 3.2.2, we noticed that there are few transactions associated with abnormal hours, such as 1 am and 11 pm.
+
+```{r}
+res <- ddply(df, ~Hour, summarise, No_of_transaction = length(unique(Transaction)))
+ggplot(data = res, mapping = aes(x = as.factor(Hour), y = No_of_transaction)) +
+  geom_bar(stat = 'identity') +
+  labs(title = 'No. of Transactions by Hour', x = 'Hours', y = 'Number of Transactions')
+
+```
+
+Considering the small amount of transactions associated with abnormal hours, we will drop the rows whose hours is outside a normal business operating time. In other words, we will drop rows whose hour is 1, 21, 22, or 23 from our dataset.
+
+```{r}
+df <- df[df$Hour > 1, ]
+df <- df[df$Hour < 21, ]
+```
+
+Another observation is that the amount of transaction within an hour varies by the time of the day. Here we split the day into two segments: rush hours from 9 to 15 and non-rush hours for the rest of the day. Such split makes sense practically as the period from 9 to 15 covers breakfast, lunch, and coffee or tea time in the afternoon.
+
+```{r}
+df$Rush_hours <- mapvalues(df$Hour,
+                        from = c(7, 8,
+                                 9, 10, 11, 12, 13, 14, 15,
+                                 16, 17, 18, 19, 20),
+                        to = c(0, 0,
+                               1, 1, 1, 1, 1, 1, 1,
+                               0, 0, 0, 0, 0))
+
+```
+
+### 3.2.4 List of Purchased Items
+
+Then we will focus on the "Item" column to understand what are included.
+
+```{r}
+Item_tb <- table(df$Item)
+sort(Item_tb, decreasing = TRUE)
+```
+This list of itme seems to be inconsistent and confusing. For example, there are items named "NONE". Also, Brownie is separated from Cakes, Baguette is not considered as Bread, and Medialuna is treated differently from Pastry.
+
+The item type "Adjustment" and "None" are probably introduced by the transaction tracking system or the cashier. In other words, there is no real purchase behind each of them. So we will drop them from the dataset. 
+
+```{r}
+df <- df[df$Item != 'NONE', ]
+df <- df[df$Item != 'Adjustment', ]
+
+df$Item_Type <- mapvalues(df$Item,
+                          from = c("Medialuna",
+                                   "Brownie",
+                                   "Farm House",
+                                   "Scone",
+                                   "Muffin",
+                                   "Alfajores",
+                                   "Toast",
+                                   "Tiffin",
+                                   "Scandinavian",
+                                   "Baguette"),
+                          to = c("Pastry",
+                                 "Cake",
+                                 "Bread",
+                                 "Pastry",
+                                 "Cake",
+                                 "Cake",
+                                 "Bread",
+                                 "Cake",
+                                 "Pastry",
+                                 "Bread"))
+
+
+Item_tb <- table(df$Item_Type)
+sort(Item_tb, decreasing = TRUE)[1:21]
+
+# if count(item) < 100 => Other
+# Lv 0: food / drink
+# Lv 1: bread / sweets / coffee / tea / other food / other drink
+
+
+```
+
+XXXXXXXXXXXXXXXXx
+
+
+
+
+## 3.3 The Edinburgh Weather Record
+
+Let's start with the high level summary of the dataset.
+
+```{r}
+summary(df_weather)
+```
+
+There are NA values in some of the columns. The columns "prcp", "snow", "wpgt" and "tsun" contain only NA values, so we will drop them.
+
+The website of Meteostat gives clear explanation of each column (https://dev.meteostat.net/python/hourly.html#response-parameters):
+
+1. station: The Meteo ID of the weather station
+
+2. temp: The air temperature in C
+
+3. dwpt: The dew point in C
+
+4. rhum: The relative humidy in percent
+
+5. wdir: The average wind direction in degrees
+
+6. wspd: The average wind speed in km/h
+
+7. pres: The average sea-level air pressure in hPa
+
+8. coco: The weather condition code (https://dev.meteostat.net/docs/formats.html#weather-condition-codes). Only significant weather events are reported here.
+
+Based on the description of each columns, we could drop the "station" column, as it remains the same for all the observations. We could also drop the "dwpt" column, as we already include the "temp" in our features. For the missing values in "coco", we will fill 0, as it stands for non-significant weather events. For the missing values in "wdir", "wspd", and "pres", considering the consistency of weather conditions, we will use the value of the hour right after.
+
+
+We will also remove the "Minute" column as it is always 00.
+
+```{r}
+df_weather <- subset(df_weather,
+                     select = -c(Minute, prcp, snow, wpgt, tsun, station, dwpt))
+```
+
+```{r}
+df_weather$coco[is.na(df_weather$coco)] <- 0
+
+df_weather <- df_weather %>% tidyr::fill(wdir, .direction = "up")
+df_weather <- df_weather %>% tidyr::fill(wspd, .direction = "up")
+df_weather <- df_weather %>% tidyr::fill(pres, .direction = "up")
+
+```
+
+
+## 3.4 The Combined Dataset
+
+We now will merge the two dataset based on the predefined keys.
+
+```{r}
+df_merged <- merge(x = df, y = df_weather, by = 'key', all.x = TRUE)
+df_merged$Date <- df_merged$Date.x
+df_merged$Hour <- df_merged$Hour.x
+df_merged <- subset(df_merged,
+                    select = -c(key, Time, Date.y, Hour.y, Date.x, Hour.x))
+
+```
+
+
+```{r}
+
+
+df_merged_feature <- subset(df_merged, select = -c(Transaction, Item, Weekday, Item_Type, Date))
+#Calculate correlation here
+corr <- round(cor(df_merged_feature), digits = 2)
+
+#Use ggcorrplot to graph correlation. Only plot the lower triangle of the correlation matrix.
+ggcorrplot(corr, type = "lower", 
+           ggtheme = ggplot2::theme_gray,
+           lab = TRUE,
+           colors = c("dark green", "white", "dark red"))
+```
+
+The correlation table suggests possible correlation between the temperature and the humidity, and between the temperature and the speed of wind.
+
+```{r}
+# To build the dataset for the regression problem
+
+# To build the dataset for the classification problem
+
+# To build the dataset for the clustering problem - if possible
+
+
+```
+
+# 4. Model
+
+
+# 5. Conclusion
