@@ -1,7 +1,7 @@
 ---
 title: "Final Project - Bakery Transaction"
-author: "Shuoqi Zhang, Yijing Lin"
-date: "11/11/2020"
+author: "Shuoqi Zhang, Yijing(Trista) Lin"
+date: "11/30/2020"
 output: html_document
 ---
 
@@ -45,7 +45,7 @@ Combining the bakery transaction record and the historical weather record, there
 
 3. Is it possible to categorize the transactions into several clusters?
 
-#3 Data Cleaning and Wangling
+#3 Data Cleaning and Wrangling
 
 ## 3.1 Read The Dataset
 
@@ -411,7 +411,7 @@ df_weather <- df_weather %>% tidyr::fill(pres, .direction = "up")
 
 ## 3.4 The Combined Dataset
 
-We now will merge the two dataset based on the predefined keys.
+We now will merge the two datasets based on the pre-defined keys.
 
 ```{r}
 df_merged <- merge(x = df, y = df_weather, by = 'key', all.x = TRUE)
@@ -488,7 +488,7 @@ grid.arrange(temp,ws,hum,wcc, nrow = 2)
 ```
 
 
-### 3.5.2 Classify Transactions By Whether it Includes Coffee (and/or other products-to be determined)
+### 3.5.2 Classify Transactions By Whether It Includes Coffee (and/or other products-to be determined)
 
 ```{r}
 
