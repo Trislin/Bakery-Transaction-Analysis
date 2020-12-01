@@ -31,7 +31,7 @@ cookiecol<-c('#ad6a1d','#9a5327','#cc8d4a','#4e1703','#ecc78d','#2e0a05','#d0dfe
 
 #1 Background
 
-The main dataset is the transaction record of a bakery (https://www.kaggle.com/sulmansarwar/transactions-from-a-bakery). Though not specified in the description of the dataset, it is implied that this bakery is located in the old town of Edinburgh, UK. The dataset is downloaded from kaggle and stored following the same path as this R markdown file.
+The main dataset is the transaction record of a bakery (https://www.kaggle.com/sulmansarwar/transactions-from-a-bakery). Though not specified in the description of the dataset, it is implied that this bakery is located in the old town of Edinburgh, UK. The dataset is downloaded from kaggle and stored under the same path as this R markdown file.
 
 In order to supplement the dataset with more features, we extract the historical weather records from Meteostat (https://dev.meteostat.net/python/hourly.html#response-parameters). We use the weather data recorded by a weather station in Edinburgh Airport, which is about 8 miles away from the Edinburgh old town. The dataset is downloaded and stored under the same path of this R markdown file.
 
@@ -129,7 +129,7 @@ ggplot(data = res, mapping = aes(x = Weekday, y = No_of_transaction, fill = Week
 
 ```
 
-As expected, there are more transactions on Saturday. However, the number transactions on Sunday seem to be low. To further understand what happened, we will look at the number of transactions by hour by weekdays.
+As expected, there are more transactions on Saturday. However, the number of transactions on Sunday seem to be low. To further understand what happened, we will look at the number of transactions by hour by weekdays.
 
 
 ```{r}
@@ -146,7 +146,7 @@ axis.text = element_text(size=8),
 
 ```
 
-Looking at the distribution of transactions by hours, we noticed that the trend for Saturday and Sunday are similar and are different from the rest of the week. Therefore, it makes sense to group Saturday and Sunday together, though Sunday has less transactions comparing with Saturday.
+Looking at the distribution of transactions by hours, we noticed that the trend for Saturday and Sunday are similar and are different from the ones of the other days. Therefore, it makes sense to group Saturday and Sunday together, though Sunday has less transactions comparing with Saturday.
 
 ```{r}
 df$Weekend <- mapvalues(df$Weekday,
@@ -192,7 +192,7 @@ df$Rush_hours <- mapvalues(df$Hour,
 
 ```
 
-### 3.2.4 List of Purchased Items
+### 3.2.4 Holidays
 We also want to take a look at sales during holidays. We will focus on two holidays, Christmas and New Year. 
 0 = non-holiday
 1 = Christmas|New Year （12/24/2016 - 1/1/2017)
@@ -213,6 +213,7 @@ hol%>%ggplot(aes(as.factor(Holiday),mean_transaction, fill = as.factor(Holiday),
 
 ```
 
+Indeed, the average number of transaction on holidays is 12% less than the one of non-holidays. 
 
 
 ### 3.2.5 List of Purchased Items
@@ -223,20 +224,30 @@ Then we will focus on the "Item" column to understand what are included.
 Item_tb <- table(df$Item)
 sort(Item_tb, decreasing = TRUE)
 ```
+
 This list of itme seems to be inconsistent and confusing. For example, there are items named "NONE". Also, Brownie is separated from Cakes, Baguette is not considered as Bread, and Medialuna is treated differently from Pastry.
 
 The item type "Adjustment" and "None" are probably introduced by the transaction tracking system or the cashier. In other words, there is no real purchase behind each of them. So we will drop them from the dataset. 
+Then, the 'Item_Type' column is reorganized and coded as following: 
 
-Item_Type is reorganized and coded as following: 
 Bread = 1
+
 Cookies = 2
+
 Cake|Pastry|Sweets = 3
+
 Coffee = 4
+
 Tea = 5
+
 Hot chocolate|Smoothie|Juice = 6
+
 Other beverage = 7
+
 Meal = 8
+
 Other = 9 
+
 *Ambiguous items are coded as 'Other'
 
 ```{r}
@@ -260,9 +271,11 @@ df%>%group_by(Item_Type)%>%
   geom_text(vjust = -0.5,size=3) + 
   labs(title = 'Item Frequency in Unique Transactions', x = 'Item Type', y = 'Average Number of Transactions') 
 ```
+
 From the Figure above, cakes/pastries/sweets are the most popular items in the bakery, followed by Coffee and Bread.
 
 We also want to see if the transaction of each item varies by the hours in the day. We decided to focus on bread, cookies, cake/pastry/sweets, coffee and tea. 
+
 ```{r}
 
 bread<-df%>%filter(Item_Type==1)%>%
@@ -375,8 +388,7 @@ The website of Meteostat gives clear explanation of each column (https://dev.met
 
 8. coco: The weather condition code (https://dev.meteostat.net/docs/formats.html#weather-condition-codes). Only significant weather events are reported here.
 
-Based on the description of each columns, we could drop the "station" column, as it remains the same for all the observations. We could also drop the "dwpt" column, as we already include the "temp" in our features. For the missing values in "coco", we will fill 0, as it stands for non-significant weather events. For the missing values in "wdir", "wspd", and "pres", considering the consistency of weather conditions, we will use the value of the hour right after.
-
+Based on the description of each columns, we could drop the "station" column, as it remains the same for all the observations. We could also drop the "dwpt" column, as we already include the "temp" in our features. For the missing values in "coco", we will fill 0, as it stands for non-significant weather events.
 
 We will also remove the "Minute" column as it is always 00.
 
@@ -384,6 +396,8 @@ We will also remove the "Minute" column as it is always 00.
 df_weather <- subset(df_weather,
                      select = -c(Minute, prcp, snow, wpgt, tsun, station, dwpt))
 ```
+
+For the missing values in "wdir", "wspd", and "pres", considering the consistency of weather conditions, we will use the value of the hour right after.
 
 ```{r}
 df_weather$coco[is.na(df_weather$coco)] <- 0
@@ -410,7 +424,6 @@ df_merged <- subset(df_merged,
 
 
 ```{r}
-
 
 df_merged_feature <- subset(df_merged, select = -c(Transaction, Item, Weekday, Item_Type, Date))
 #Calculate correlation here
@@ -523,8 +536,3 @@ summary(df_merged_cluster)
 
 ```
 
-
-# 4. Model
-
-
-# 5. Conclusion
