@@ -23,8 +23,14 @@ library(glmnet)
 library(gridExtra)
 library(grid)
 library(RColorBrewer)
+library(randomForest)
+library(gbm)
+# for Association Rules analysis
 library(arules)
 library(data.table)
+library(gridExtra)
+library(tree)
+
 nb.cols <- 18
 mycolors <- colorRampPalette(brewer.pal(8, "Blues"))(nb.cols)
 cookiecol<-c('#ad6a1d','#9a5327','#cc8d4a','#4e1703','#ecc78d','#2e0a05','#d0dfe4','#33575b', '#173742')
@@ -45,7 +51,8 @@ Combining the bakery transaction record and the historical weather record, there
 
 2. Knowing the date, hour, weather forecast and other information, to predict whether a transaction will include the purchase of any kind of bread.
 
-3. Is it possible to categorize the transactions into several clusters?
+3. Are there any items which are always brought together?
+
 
 #3 Data Cleaning and Wrangling
 
@@ -390,23 +397,23 @@ The website of Meteostat gives clear explanation of each column (https://dev.met
 
 8. coco: The weather condition code (https://dev.meteostat.net/docs/formats.html#weather-condition-codes). Only significant weather events are reported here.
 
-Based on the description of each columns, we could drop the "station" column, as it remains the same for all the observations. We could also drop the "dwpt" column, as we already include the "temp" in our features. For the missing values in "coco", we will fill 0, as it stands for non-significant weather events.
+Based on the description of each columns, we could drop the "station" column, as it remains the same for all the observations. We could also drop the "dwpt" column, as we already include the "temp" in our features. Another variable to drop is "pres", as the air pressure is difficult to interpret for people without the background in Meteorology. For the missing values in "coco", we will fill 0, as it stands for non-significant weather events.
 
 We will also remove the "Minute" column as it is always 00.
 
 ```{r}
 df_weather <- subset(df_weather,
-                     select = -c(Minute, prcp, snow, wpgt, tsun, station, dwpt))
+                     select = -c(Minute, prcp, snow, wpgt, tsun, station, dwpt, pres))
 ```
 
-For the missing values in "wdir", "wspd", and "pres", considering the consistency of weather conditions, we will use the value of the hour right after.
+For the missing values in "wdir" and "wspd", considering the consistency of weather conditions, we will use the value of the hour right after.
 
 ```{r}
 df_weather$coco[is.na(df_weather$coco)] <- 0
 
 df_weather <- df_weather %>% tidyr::fill(wdir, .direction = "up")
 df_weather <- df_weather %>% tidyr::fill(wspd, .direction = "up")
-df_weather <- df_weather %>% tidyr::fill(pres, .direction = "up")
+#df_weather <- df_weather %>% tidyr::fill(pres, .direction = "up")
 
 ```
 
@@ -442,12 +449,13 @@ The correlation table suggests possible correlation between the temperature and 
 
 ## 3.5 Dataset Construction
 
-### 3.5.1 Predict Transactions By Date, Hour, and Weather Information
+### 3.5.1 Predict Transactions By Day of week, Hour, and Weather Information
 
 ```{r}
 # To build the dataset for the regression problem
 
 df_merged_reg <- ddply(df_merged, .(Date, Hour), summarise, No_of_transaction = length(unique(Transaction)))
+
 
 df_merged_temp <- subset(df_merged, select = -c(Transaction, Item, Item_Type))
 
@@ -456,6 +464,8 @@ df_merged_reg <- merge(x = df_merged_reg,
                        by = c('Date', 'Hour'))
 
 df_merged_reg <- distinct(df_merged_reg)
+
+df_merged_reg <- subset(df_merged_reg, select = -c(Date))
 
 summary(df_merged_reg)
 ```
@@ -508,6 +518,8 @@ df_merged_clas <- merge(x = df_merged_clas,
 
 df_merged_clas <- distinct(df_merged_clas)
 
+df_merged_clas <- subset(df_merged_clas, select = -c(Date))
+
 summary(df_merged_clas)
 
 ```
@@ -526,12 +538,7 @@ Here we will construct the dataset to perform market basket analysis at a later 
 df_merged_mba <- df_merged
 
 # map back the name of Item type
-#df_merged_mba$Item_Type_Name <- df_merged_mba$Item_Type
-#df_merged_mba$Item_Type_Name <- mapvalues(df_merged_mba$Item_Type_Name,
-#                                          from = c(1, 2, 3, 4, 5, 6, 7, 8, 9),
-#                                          to = c('Bread', 'Cookies', 'Cake|Pastry|Sweets',
-#                                                 'Coffee', 'Tea', 'Hot chocolate|Smoothie|Juice',
-#                                                 'Other beverage', 'Meal', 'Other'))
+
 df_merged_mba$Item_Type_Name[df$Item_Type == 1] <- 'Bread'
 df_merged_mba$Item_Type_Name[df$Item_Type == 2] <- 'Cookies'
 df_merged_mba$Item_Type_Name[df$Item_Type == 3] <- 'Cake|Pastry|Sweets'
@@ -595,7 +602,170 @@ summary(df_merged_cluster)
 
 #4 Modeling and Analysis
 
-##4.1 Regression
+##4.1 Predicting The Number of Transactions
+
+The task of this analysis is to predict the number of transactions during that specific hour, knowing the date, hour, and weather forecast. More importantly, from the model created, we expert to further understand how the sales is driven by external variables, such as weather, day of the week, time of the day and so on.
+
+Firstly, we will split the dataset into training set and validation set.
+
+```{r}
+set.seed(0)
+
+# Here we will drop some features from the model
+
+df_merged_reg <- subset(df_merged_reg,
+                        #select = -c(Weekday))
+                        select = -c(Weekday, Hour))
+
+
+train <- sample(1:nrow(df_merged_reg), round(0.8*dim(df_merged_reg)[1]))
+num_features <- dim(df_merged_reg)[2]
+
+```
+
+Secondly, we set up our baseline regression model - random forest regression model. We will try several different sets of hyperparameters, including 'mtry' and 'ntree' to figure out the best random forest regression model as baseline.
+
+```{r}
+search_grid <- expand.grid(mtry = c(round(num_features/3/2),
+                                    round(num_features/3),
+                                    round(num_features/3*2)),
+                           ntree = c(100, 500, 1000))
+
+min_RMSE <- Inf
+best_mtry <- 0
+best_ntree <- 0
+
+for (i in seq(1, nrow(search_grid))){
+  rf_reg <- randomForest(No_of_transaction~.,
+                           df_merged_reg[train, ],
+                           mtry = search_grid[i, ]$mtry,
+                           ntree = search_grid[i, ]$ntree,
+                           importance = TRUE
+                           )
+  if (mean(rf_reg$mse) < min_RMSE) {
+    min_RMSE <- mean(rf_reg$mse)
+    best_mtry <- search_grid[i, ]$mtry
+    best_ntree <- search_grid[i, ]$ntree
+    
+  }
+
+  }
+
+# Train the random forest model using the best 'mtry' and 'ntree'.
+rf_reg_best <- randomForest(No_of_transaction~.,
+                           df_merged_reg[train, ],
+                           mtry = best_mtry,
+                           ntree = best_ntree,
+                           importance = TRUE
+                           )
+
+rf_reg_best
+
+```
+
+Then we train a regression trees model using boosting algorithm to compare with the random forest model constructed.
+
+```{r}
+search_grid <- expand.grid(shrinkage = c(0.01, 0.001),
+                           interaction.depth = c(4, 5),
+                           n.minobsinnode = c(10, 100),
+                           bag.fraction = c(0.5, 0.8),
+                           optimal_trees = 0,
+                           min_RMSE = 0)
+
+for (i in seq(1, nrow(search_grid))){
+
+  boost.fit <- gbm(No_of_transaction~. ,
+                  data = df_merged_reg[train, ], 
+                  distribution = "gaussian",
+                  cv.folds = 10,
+                  n.trees = 4000,
+                  train.fraction = 0.75,
+                  n.cores = NULL,
+                  verbose = FALSE,
+                  shrinkage = search_grid[i, ]$shrinkage,
+                  interaction.depth = search_grid[i, ]$interaction.depth,
+                  n.minobsinnode = search_grid[i, ]$n.minobsinnode,
+                  bag.fraction = search_grid[i, ]$bag.fraction,
+                  )
+  search_grid[i, ]$min_RMSE <- min(boost.fit$cv.error)
+  search_grid[i, ]$optimal_trees = match(min(boost.fit$cv.error), boost.fit$cv.error)
+
+}
+
+# Train and fit this model with the best sets of hyperparameters:
+
+boost_best_para <- 
+  search_grid[search_grid$min_RMSE == min(search_grid$min_RMSE),]
+
+boost.best <- gbm(No_of_transaction~. ,
+                  data = df_merged_reg[train, ], 
+                  distribution = "gaussian",
+                  cv.folds = 10,
+                  n.trees = 4000,
+                  train.fraction = 0.75,
+                  n.cores = NULL,
+                  verbose = FALSE,
+                  shrinkage = boost_best_para$shrinkage,
+                  interaction.depth = boost_best_para$interaction.depth,
+                  n.minobsinnode = boost_best_para$n.minobsinnode,
+                  bag.fraction = boost_best_para$bag.fraction,
+                  )
+
+boost.best
+
+```
+
+Then we compare the performance of both the random forest model and the trees model using boosting algorithm on the validation set.
+
+```{r}
+boost_pred_test <- predict(boost.best,
+                           newdata = df_merged_reg[-train, ],
+                           n.trees = 4000)
+boost_RMSE_test <- caret::RMSE(boost_pred_test, df_merged_reg[-train, ]$No_of_transaction)
+
+rf_pred_test <- predict(rf_reg_best,
+                        newdata = df_merged_reg[-train, ])
+
+rf_RMSE_test <- caret::RMSE(rf_pred_test, df_merged_reg[-train, ]$No_of_transaction)
+
+print(paste0('RMSE of the boosting model on testing set:', round(boost_RMSE_test, 4)))
+print(paste0('RMSE of the random forest model on testing set:', round(rf_RMSE_test, 4)))
+
+```
+
+It seems that the random forest model selected performs better than the other model selected. For the random forest model, the RMSE on the training set is `r round(sqrt(mean(rf_reg_best$mse)), 4)`, which doesn't suggest the risk of overfitting.
+
+Now that we have the regression model constructed, we would like to further understand the impact of different features.
+
+```{r}
+varImpPlot(rf_reg_best)
+
+```
+
+The most important factors are whether the time is in the rush hours - this is not surprising. What's interesting is that the weather related variables have similar level impact on node purity as the one of whether a day is weekend. We use partial dependence plot here to further understand the impact of weather related variables.
+
+```{r}
+par(mfrow = c(2, 2))
+partialPlot(rf_reg_best, df_merged_reg[train, ], x.var = 'wdir')
+partialPlot(rf_reg_best, df_merged_reg[train, ], x.var = 'wspd')
+partialPlot(rf_reg_best, df_merged_reg[train, ], x.var = 'rhum')
+partialPlot(rf_reg_best, df_merged_reg[train, ], x.var = 'temp')
+
+```
+
+From the partial dependence plot, we could learn that:
+
+1. Higher temperature has positive impact on the sales
+
+2. When there is the north wind or north-east wind (direction of wind between 350 and 56), the sales will be higher than the case when the wind is blowing from other directions.
+
+3. Higher humidity has negative impact on the sales
+
+4. Stronger wind has negative impact on the sales
+
+To sum up, the most important variable in forecasting the number of transactions at a given time is whether it is during the rush hour. Also, different weather related variables have different impact on the number of transaction - so watch the weather forecast and be prepared.
+
 
 ##4.2 Classification
 
@@ -760,9 +930,9 @@ axis.title.y = element_text(size=8)
 
 It could be observed that Spanish brunch is sold more during the weekends. In a nutshell, there are two suggestions to the Bakery from analyzing the association rules:
 
-1. Place toast, medialuna, and pastry close to coffee from Monday to Friday, trying to boost the sales of both
+1. Promote bundles of toast and coffee, medialuna and coffee, and pastry and coffee from Monday to Friday, boosting the sales of both.
 
-2. Place Spanish brunch close to coffee during the weekends
+2. Promote bundles of Spanish brunch and coffee during the weekends, trying to boost the sales of both.
 
 
 ##4.4 Clustering
