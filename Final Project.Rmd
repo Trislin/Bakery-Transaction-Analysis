@@ -23,6 +23,8 @@ library(glmnet)
 library(gridExtra)
 library(grid)
 library(RColorBrewer)
+library(arules)
+library(data.table)
 nb.cols <- 18
 mycolors <- colorRampPalette(brewer.pal(8, "Blues"))(nb.cols)
 cookiecol<-c('#ad6a1d','#9a5327','#cc8d4a','#4e1703','#ecc78d','#2e0a05','#d0dfe4','#33575b', '#173742')
@@ -516,7 +518,60 @@ For the classification problem, we will look at the distribution of the class to
 table(df_merged_clas$Has_Coffee)
 ```
 
-### 3.5.3 Study The Clusters of Transactions
+### 3.5.3 Market Basket Analysis
+
+Here we will construct the dataset to perform market basket analysis at a later stage.
+
+```{r}
+df_merged_mba <- df_merged
+
+# map back the name of Item type
+#df_merged_mba$Item_Type_Name <- df_merged_mba$Item_Type
+#df_merged_mba$Item_Type_Name <- mapvalues(df_merged_mba$Item_Type_Name,
+#                                          from = c(1, 2, 3, 4, 5, 6, 7, 8, 9),
+#                                          to = c('Bread', 'Cookies', 'Cake|Pastry|Sweets',
+#                                                 'Coffee', 'Tea', 'Hot chocolate|Smoothie|Juice',
+#                                                 'Other beverage', 'Meal', 'Other'))
+df_merged_mba$Item_Type_Name[df$Item_Type == 1] <- 'Bread'
+df_merged_mba$Item_Type_Name[df$Item_Type == 2] <- 'Cookies'
+df_merged_mba$Item_Type_Name[df$Item_Type == 3] <- 'Cake|Pastry|Sweets'
+df_merged_mba$Item_Type_Name[df$Item_Type == 4] <- 'Coffee'
+df_merged_mba$Item_Type_Name[df$Item_Type == 5] <- 'Tea'#'Other beverage'#'Tea'
+df_merged_mba$Item_Type_Name[df$Item_Type == 6] <- 'Hot chocolate|Smoothie|Juice'#'Other beverage'
+df_merged_mba$Item_Type_Name[df$Item_Type == 7] <- 'Other beverage'
+df_merged_mba$Item_Type_Name[df$Item_Type == 8] <- 'Meal'
+df_merged_mba$Item_Type_Name[df$Item_Type == 9] <- 'Other'
+
+
+df_merged_mba_item_type_temp <- subset(df_merged_mba,
+                                       select = c(Transaction, Item_Type_Name))
+
+df_merged_mba_item_type_temp <- distinct(df_merged_mba_item_type_temp)
+
+# Remove the transactions including only one item type
+df_merged_mba_item_type_temp <-
+  df_merged_mba_item_type_temp %>%
+  group_by(Transaction) %>%
+  mutate(freq = n()) %>%
+  data.frame()
+
+df_merged_mba_item_type_temp <- df_merged_mba_item_type_temp[df_merged_mba_item_type_temp$freq > 1, ]
+
+
+# MBA on category of items
+df_merged_mba_item_type <- df_merged_mba_item_type_temp %>%
+  group_by(Transaction) %>%
+  summarise(basket = as.vector(list(Item_Type_Name)))
+
+# MBA on items
+df_merged_mba_item <- df_merged_mba %>%
+  group_by(Transaction) %>%
+  summarise(basket = as.vector(list(Item)))
+
+
+```
+
+### 3.5.4 Study The Clusters of Transactions
 
 On top of the database constructed during chapter 3.5.2, here we will add the number of type of items for each transaction.
 
@@ -536,3 +591,184 @@ summary(df_merged_cluster)
 
 ```
 
+
+
+#4 Modeling and Analysis
+
+##4.1 Regression
+
+##4.2 Classification
+
+##4.3 Market Basket Analysis
+
+The objective of this analysis is to identify possible association rules. For example, assuming we identify from the data that people who buy cake tend to buy cookie at the same time, then the bakery could consider to place these two item closer in the shop in order to boost the sales.
+
+We have already re-grouped different items, so for this analysis, we will start from looking at the association rules among item types.
+
+```{r}
+transactions_Item_Type <- as(df_merged_mba_item_type$basket, "transactions")
+#inspect(transactions_Item_Type[1])
+
+# Set the threshold low to identify more rules
+# Set minlen = 2 to make sure there are items in LHS
+rules_Item_Type <- apriori(transactions_Item_Type, 
+                 parameter = list(support = 0.05, 
+                                  confidence = 0.025,
+                                  minlen = 2))
+# Remove redundant rules
+rules_Item_Type <- rules_Item_Type[!is.redundant(rules_Item_Type)]
+
+# Reorder by Lift and display
+rules_Item_Type_dt <- data.table( lhs = labels( lhs(rules_Item_Type) ), 
+                        rhs = labels( rhs(rules_Item_Type) ), 
+                        quality(rules_Item_Type) )[ order(-lift), ]
+head(rules_Item_Type_dt, 10)
+#rules_Item_Type_dt
+
+```
+
+From the table we observe that the highest lift of all rules is still smaller than 1. That says, no valid association rules identified among the item types.
+
+Then we focus our market basket analysis on the detail list of items, instead of the category.
+
+```{r}
+transactions_Item <- as(df_merged_mba_item$basket, "transactions")
+#inspect(transactions_Item[1])
+
+# Set the threshold low to identify more rules
+# Set minlen = 2 to make sure there are items in LHS
+rules_Item <- apriori(transactions_Item, 
+                 parameter = list(support = 0.01, 
+                                  confidence = 0.25,
+                                  minlen = 2)
+                 )
+
+# Remove redundant rules
+rules_Item <- rules_Item[!is.redundant(rules_Item)]
+
+# Reorder by Lift and display
+rules_Item_dt <- data.table( lhs = labels( lhs(rules_Item) ), 
+                        rhs = labels( rhs(rules_Item) ), 
+                        quality(rules_Item) )[ order(-lift), ]
+head(rules_Item_dt,10)
+#rules_Item_dt
+
+
+```
+
+Few observations could be made from the table:
+
+1. People who buy toast tends to buy coffee at the same time
+
+2. People who buy Spanish brunch tends to buy coffee at the same time
+
+3. People who buy medialuna tends to buy coffee at the same time
+
+4. People who buy pastry tends to buy coffee at the same time
+
+It seems that Spanish brunch is different from the other short-listed items. Toast, medialuna, and pastry sounds more like breakfast. We plot the distribution by time of the day to validate our observations.
+
+```{r}
+
+p1<-df%>%filter(Item=='Toast')%>%
+  group_by(as.factor(Hour))%>%
+  mutate(Avg_No_of_transaction = length(unique(Transaction))/length(unique(df$Transaction))) %>%
+  ggplot(aes(x = as.factor(Hour), y = Avg_No_of_transaction, fill = as.factor(Hour))) +
+  geom_bar(stat = 'identity',alpha=0.8) +
+  labs(title = 'Average Number of Transactions of Toast by Hour',
+       x = 'Hours', y = 'Avg No. of Transaction') +
+  scale_fill_manual(values = colorRampPalette(c('#ecc78d','#2e0a05'))(nb.cols)) +
+  theme_minimal() +
+  theme(legend.position = "none",
+plot.title = element_text(size=8),
+axis.title.x = element_text(size=8),
+axis.title.y = element_text(size=8)
+)
+
+p2<-df%>%filter(Item=='Spanish Brunch')%>%
+  group_by(as.factor(Hour))%>%
+  mutate(Avg_No_of_transaction = length(unique(Transaction))/length(unique(df$Transaction))) %>%
+  ggplot(aes(x = as.factor(Hour), y = Avg_No_of_transaction, fill = as.factor(Hour))) +
+  geom_bar(stat = 'identity',alpha=0.8) +
+  labs(title = 'Average Number of Transactions of Spanish Brunch by Hour',
+       x = 'Hours', y = 'Avg No. of Transaction') +
+  scale_fill_manual(values = colorRampPalette(c('#ecc78d','#2e0a05'))(nb.cols)) +
+  theme_minimal() +
+  theme(legend.position = "none",
+plot.title = element_text(size=8),
+axis.title.x = element_text(size=8),
+axis.title.y = element_text(size=8)
+)
+
+p3<-df%>%filter(Item=='Medialuna')%>%
+  group_by(as.factor(Hour))%>%
+  mutate(Avg_No_of_transaction = length(unique(Transaction))/length(unique(df$Transaction))) %>%
+  ggplot(aes(x = as.factor(Hour), y = Avg_No_of_transaction, fill = as.factor(Hour))) +
+  geom_bar(stat = 'identity',alpha=0.8) +
+  labs(title = 'Average Number of Transactions of Medialuna by Hour',
+       x = 'Hours', y = 'Avg No. of Transaction') +
+  scale_fill_manual(values = colorRampPalette(c('#ecc78d','#2e0a05'))(nb.cols)) +
+  theme_minimal() +
+  theme(legend.position = "none",
+plot.title = element_text(size=8),
+axis.title.x = element_text(size=8),
+axis.title.y = element_text(size=8)
+)
+
+p4<-df%>%filter(Item=='Pastry')%>%
+  group_by(as.factor(Hour))%>%
+  mutate(Avg_No_of_transaction = length(unique(Transaction))/length(unique(df$Transaction))) %>%
+  ggplot(aes(x = as.factor(Hour), y = Avg_No_of_transaction, fill = as.factor(Hour))) +
+  geom_bar(stat = 'identity',alpha=0.8) +
+  labs(title = 'Average Number of Transactions of Pastry by Hour',
+       x = 'Hours', y = 'Avg No. of Transaction') +
+  scale_fill_manual(values = colorRampPalette(c('#ecc78d','#2e0a05'))(nb.cols)) +
+  theme_minimal() +
+  theme(legend.position = "none",
+plot.title = element_text(size=8),
+axis.title.x = element_text(size=8),
+axis.title.y = element_text(size=8)
+)
+
+
+grid.arrange(p1, p2, p3, p4,
+             nrow=2,ncol=2,
+             top = textGrob("Average Transaction Frequency by Hours",
+                            gp=gpar(fontsize=14,font=3)))
+
+```
+
+It turns out that Spanish brunch is sold more during lunch hour. This indeed brings another question - is people buying more Spanish brunch during the workdays or during the weekends?
+
+
+```{r}
+df%>%filter(Item=='Spanish Brunch')%>%
+  group_by(as.factor(Hour))%>%
+  mutate(Avg_No_of_transaction = length(unique(Transaction))/length(unique(df$Transaction))) %>%
+  ggplot(aes(x = as.factor(Weekday), y = Avg_No_of_transaction, fill = as.factor(Weekday))) +
+  geom_bar(stat = 'identity',alpha=0.8) +
+  labs(title = 'Average Number of Transactions of Spanish Brunch by Hour',
+       x = 'Hours', y = 'Avg No. of Transaction') +
+  scale_fill_manual(values = colorRampPalette(c('#ecc78d','#2e0a05'))(nb.cols)) +
+  theme_minimal() +
+  theme(legend.position = "none",
+plot.title = element_text(size=8),
+axis.title.x = element_text(size=8),
+axis.title.y = element_text(size=8)
+)
+```
+
+It could be observed that Spanish brunch is sold more during the weekends. In a nutshell, there are two suggestions to the Bakery from analyzing the association rules:
+
+1. Place toast, medialuna, and pastry close to coffee from Monday to Friday, trying to boost the sales of both
+
+2. Place Spanish brunch close to coffee during the weekends
+
+
+##4.4 Clustering
+
+
+
+#5 Conclusion
+
+#6 xxx
