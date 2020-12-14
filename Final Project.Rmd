@@ -25,11 +25,12 @@ library(grid)
 library(RColorBrewer)
 library(randomForest)
 library(gbm)
-# for Association Rules analysis
-library(arules)
+library(arules) # for Association Rules analysis
 library(data.table)
 library(gridExtra)
 library(tree)
+library(factoextra)
+library(cluster)
 
 nb.cols <- 18
 mycolors <- colorRampPalette(brewer.pal(8, "Blues"))(nb.cols)
@@ -594,6 +595,10 @@ df_merged_cluster <- merge(x = df_merged_cluster,
 
 df_merged_cluster <- distinct(df_merged_cluster)
 
+# remove the transaction ID and Weekday
+df_merged_cluster <- subset(df_merged_cluster,
+                            select = -c(Transaction, Weekday))
+
 summary(df_merged_cluster)
 
 ```
@@ -930,14 +935,62 @@ axis.title.y = element_text(size=8)
 
 It could be observed that Spanish brunch is sold more during the weekends. In a nutshell, there are two suggestions to the Bakery from analyzing the association rules:
 
-1. Promote bundles of toast and coffee, medialuna and coffee, and pastry and coffee from Monday to Friday, boosting the sales of both.
+1. Promote bundles of toast and coffee, medialuna and coffee, and pastry and coffee, boosting the sales of both.
 
 2. Promote bundles of Spanish brunch and coffee during the weekends, trying to boost the sales of both.
 
-
 ##4.4 Clustering
 
+XXXXXX
 
+```{r}
+
+fviz_nbclust(
+  df_merged_cluster,
+  kmeans,
+  k.max = 10,
+  method = "wss"
+)
+
+
+fviz_nbclust(
+  df_merged_cluster,
+  kmeans,
+  k.max = 10,
+  method = "silhouette"
+)
+
+```
+
+Both figures suggest that the best K should be 2. So we will start with k = 2.
+
+```{r}
+
+km_out_2 <- kmeans(df_merged_cluster, 2, nstart = 25)
+
+fviz_cluster(km_out_2, df_merged_cluster, geom = 'point', ellipse.type = 'norm',
+             main = 'K-Means Clustering Results with K=2')
+
+```
+
+Apparently, PCA might not be the ideal way to extract the features for visualization. The first and second principle components together could only explain 30% of variance.
+
+```{r}
+library(Rtsne)
+
+df_merged_cluster <- distinct(df_merged_cluster)
+
+tsne_out <- Rtsne(df_merged_cluster,
+                  dims = 2,
+                  initial_dims = 30,
+                  perplexity = 150)
+plot(tsne_out$Y)
+
+```
+
+```{r}
+plot(tsne_out$Y)
+```
 
 #5 Conclusion
 
