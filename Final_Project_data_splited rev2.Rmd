@@ -578,6 +578,18 @@ On top of the database constructed during chapter 3.5.2, here we will add the nu
 #                           summarise,
 #                           No_Item_Type = length(unique(Item)))
 
+df_merged_cluster<-df_merged%>%group_by(Transaction)%>%
+  mutate(No_Item_Type = length(unique(Item)))%>%
+  ungroup()%>%
+  select(-Transaction,-Item, -Weekday,-Date)%>%
+  unique()%>%
+  data.frame()
+
+df_merged_cluster[,c(2:11)]<-sapply(df_merged_cluster[,c(2:11)], as.numeric)
+
+cluster_wkday<-df_merged_cluster%>%filter(Weekend==0)%>%select(-Weekend)%>%data.frame()
+cluster_wkend<-df_merged_cluster%>%filter(Weekend==1)%>%select(-Weekend)%>%data.frame()
+
 #df_merged_cluster <- merge(x = df_merged_cluster,
                            #y = df_merged_clas,
                            #by = 'Transaction')
@@ -588,8 +600,8 @@ On top of the database constructed during chapter 3.5.2, here we will add the nu
 #df_merged_cluster <- subset(df_merged_cluster,
                             #select = -c(Transaction, Weekday))
 
-#summary(df_merged_cluster)
-
+summary(cluster_wkday)
+summary(cluster_wkend)
 ```
 
 
@@ -631,12 +643,12 @@ grid=10^seq(10,-2, length =100)
 ```{r}
 lasso.mod=glmnet(x_wkday[train_wkday,],y_wkday[train_wkday],alpha=1,lambda=grid)
 plot(lasso.mod)
-
 ```
 
 ```{r}
 cv.out=cv.glmnet(x_wkday[train_wkday,],y_wkday[train_wkday],alpha=1)
 plot(cv.out)
+
 ```
 
 test MSE of the model chosen by lasso
@@ -657,7 +669,6 @@ lasso.coef
 ```{r}
 lasso.coef[lasso.coef!=0]
 ```
-In weekdays, rush hours has the largest effects on number of transactions. The number of transactions in rush hours is more than the number of transactions not in rush hours by 3.73. The number of transactions in holidays is less than the number of transactions not in holidays by 0.15. One unit increase in temperature increases the number of transactions by 0.001. One unit increase in wind speed decreases the number of transactions by 0.017. When weather condition is foggy(coco=5), number of transactions is lower than number of transactions in other weather conditions. 
 
 **Weekend**
 ```{r}
@@ -698,7 +709,6 @@ lasso.coef
 ```{r}
 lasso.coef[lasso.coef!=0]
 ```
-In weekends, rush hours again has the strongest effect on the number of transactions. Wind speed still has a negative effect on the number of transactions. In contrast to weekdays, temperature now has a negative effect on the number of transactions (consider this data mostly came from data in winter...??). When weather condition is foggy(coco=5), number of transactions is higher than number of transactions in other weather conditions. Finally, wind direction only has a weak positive effect on the number of transactions for transactions in weekends. 
 
 ***Random Forest***
 Secondly, we set up our baseline regression model - random forest regression model. We will try several different sets of hyperparameters, including 'mtry' and 'ntree' to figure out the best random forest regression model as baseline.
@@ -811,7 +821,6 @@ print(paste0('RMSE of the boosting model on Weekday testing set:', round(boost_R
 print(paste0('RMSE of the random forest model on Weekday testing set:', round(rf_RMSE_test_wkday, 4)))
 
 ```
-**test error smaller than training error??** 
 
 **Weekend**
 ```{r}
@@ -920,7 +929,6 @@ print(paste0('RMSE of the boosting model on Weekend testing set:', round(boost_R
 print(paste0('RMSE of the random forest model on Weekend testing set:', round(rf_RMSE_test_wkend, 4)))
 
 ```
-**test error smaller than training error??** 
 
 
 It seems that the random forest model selected performs better than the other model selected. For the random forest model, the RMSE on the training set is `r round(sqrt(mean(rf_reg_best$mse)), 4)`, which doesn't suggest the risk of overfitting.
@@ -1047,6 +1055,12 @@ head(rules_Item_dt_wkday, 20)
 
 ```
 
+```{r}
+subrules2 <- head(sort(rules_Item, by = "lift"), 10)
+ig <- plot( subrules2, method="graph",
+            control=list(type="items") )
+
+```
 Few observations could be made from the table:
 
 During weekdays
@@ -1059,8 +1073,7 @@ During weekdays
 
 4. People who buy sweets, such as scone and cake, tends to buy tea at the same time.
 
-To further explore the finding #4, we plot the distribution of transactions incluidng scone or cake by hours.
-
+To further explore the finding #4, we plot the distribution of transactions including scone or cake by hours.
 ```{r}
 p1<-mba_wkday%>%filter(Item=='Scone')%>%
   group_by(as.factor(Hour))%>%
@@ -1112,6 +1125,7 @@ Based on the above, maybe we could recommend the bakery, for weekdays:
 4. To create bundles sales for afternoon snack and tea 
 
 
+
 **Weekend**
 ```{r}
 transactions_Item <- as(mba_wkend$basket, "transactions")
@@ -1133,7 +1147,7 @@ rules_Item_dt_wkend <- data.table( lhs = labels( lhs(rules_Item_wkend) ),
                         rhs = labels( rhs(rules_Item_wkend) ), 
                         quality(rules_Item_wkend) )[ order(-lift), ]
 #rules_Item_dt_wkend%>%filter(lift>1)
-head(rules_Item_dt_wkend, 10)
+head(rules_Item_dt_wkend, 20)
 #rules_Item_dt
 
 
@@ -1141,7 +1155,7 @@ head(rules_Item_dt_wkend, 10)
 
 ```{r}
 # Graph for 10 rules - Weekend
-subrules2 <- head(sort(rules_Item, by = "lift"), 10)
+subrules2 <- head(sort(rules_Item_wkend, by = "lift"), 10)
 ig <- plot( subrules2, method="graph",
             control=list(type="items") )
 
@@ -1153,8 +1167,137 @@ Based on the observations, the recommendations to the bakery would be:
 
 1. During weekends, place the cake in a visible place closer to the cashier
 
-2. Keep the combo of multiple drinks and cake
+2. Keep the combo of multiple drinks and cake 
 
+As cake is the center of the associations, we are also curious when the sales of cakes peak and how the sales of different drinks associated with cakes vary by the hours of the day. 
+
+```{r}
+p3<-mba_wkday%>%filter(Item=='Cake')%>%
+  group_by(as.factor(Hour))%>%
+  mutate(Avg_No_of_transaction = length(unique(Transaction))/length(unique(mba_wkend$Transaction))) %>%
+  ggplot(aes(x = as.factor(Hour), y = Avg_No_of_transaction, fill = as.factor(Hour))) +
+  geom_bar(stat = 'identity',alpha=0.8) +
+  labs(title = 'Average Number of Transactions of Cake by Hour',
+       x = 'Hours', y = 'Avg No. of Transaction') +
+  scale_fill_manual(values = colorRampPalette(c('#ecc78d','#2e0a05'))(nb.cols)) +
+  theme_minimal() +
+  theme(legend.position = "none",
+plot.title = element_text(size=8),
+axis.title.x = element_text(size=8),
+axis.title.y = element_text(size=8)
+)
+
+p4<-mba_wkday%>%filter(Item=='Coffee')%>%
+  group_by(as.factor(Hour))%>%
+  mutate(Avg_No_of_transaction = length(unique(Transaction))/length(unique(mba_wkend$Transaction))) %>%
+  ggplot(aes(x = as.factor(Hour), y = Avg_No_of_transaction, fill = as.factor(Hour))) +
+  geom_bar(stat = 'identity',alpha=0.8) +
+  labs(title = 'Average Number of Transactions of Coffee by Hour',
+       x = 'Hours', y = 'Avg No. of Transaction') +
+  scale_fill_manual(values = colorRampPalette(c('#ecc78d','#2e0a05'))(nb.cols)) +
+  theme_minimal() +
+  theme(legend.position = "none",
+plot.title = element_text(size=8),
+axis.title.x = element_text(size=8),
+axis.title.y = element_text(size=8)
+)
+
+p5<-mba_wkday%>%filter(Item=='Tea')%>%
+  group_by(as.factor(Hour))%>%
+  mutate(Avg_No_of_transaction = length(unique(Transaction))/length(unique(mba_wkend$Transaction))) %>%
+  ggplot(aes(x = as.factor(Hour), y = Avg_No_of_transaction, fill = as.factor(Hour))) +
+  geom_bar(stat = 'identity',alpha=0.8) +
+  labs(title = 'Average Number of Transactions of Tea by Hour',
+       x = 'Hours', y = 'Avg No. of Transaction') +
+  scale_fill_manual(values = colorRampPalette(c('#ecc78d','#2e0a05'))(nb.cols)) +
+  theme_minimal() +
+  theme(legend.position = "none",
+plot.title = element_text(size=8),
+axis.title.x = element_text(size=8),
+axis.title.y = element_text(size=8)
+)
+
+p6<-mba_wkday%>%filter(Item=='Hot chocolate')%>%
+  group_by(as.factor(Hour))%>%
+  mutate(Avg_No_of_transaction = length(unique(Transaction))/length(unique(mba_wkend$Transaction))) %>%
+  ggplot(aes(x = as.factor(Hour), y = Avg_No_of_transaction, fill = as.factor(Hour))) +
+  geom_bar(stat = 'identity',alpha=0.8) +
+  labs(title = 'Average Number of Transactions of Hot chocolate by Hour',
+       x = 'Hours', y = 'Avg No. of Transaction') +
+  scale_fill_manual(values = colorRampPalette(c('#ecc78d','#2e0a05'))(nb.cols)) +
+  theme_minimal() +
+  theme(legend.position = "none",
+plot.title = element_text(size=8),
+axis.title.x = element_text(size=8),
+axis.title.y = element_text(size=8)
+)
+
+grid.arrange(p3,p4, p5,p6,
+             nrow=2,ncol=2,
+             top = textGrob("Average Transaction Frequency by Hours",
+                            gp=gpar(fontsize=14,font=3)))
+
+```
+From the figures above, coffee is sold more in the morning, as opposed to tea and hot chocolate. Sales of cake peak in the afternoon, and so as tea and hot chocolate. It is likely that in weekends, people hang out together at the bakery to get the cake and multiple drinks. The bakey could make a special weekend afternoon combo for cake and drinks.
+
+To further explore the top association between Farm House and Medialuna, we plot the distribution of these two items by hours
+```{r}
+p1<-mba_wkend%>%filter(Item=='Medialuna')%>%
+  group_by(as.factor(Hour))%>%
+  mutate(Avg_No_of_transaction = length(unique(Transaction))/length(unique(mba_wkend$Transaction))) %>%
+  ggplot(aes(x = as.factor(Hour), y = Avg_No_of_transaction, fill = as.factor(Hour))) +
+  geom_bar(stat = 'identity',alpha=0.8) +
+  labs(title = 'Average Number of Transactions of Medialuna by Hour',
+       x = 'Hours', y = 'Avg No. of Transaction') +
+  scale_fill_manual(values = colorRampPalette(c('#ecc78d','#2e0a05'))(nb.cols)) +
+  theme_minimal() +
+  theme(legend.position = "none",
+plot.title = element_text(size=8),
+axis.title.x = element_text(size=8),
+axis.title.y = element_text(size=8)
+)
+
+p2<-mba_wkday%>%filter(Item=='Farm House')%>%
+  group_by(as.factor(Hour))%>%
+  mutate(Avg_No_of_transaction = length(unique(Transaction))/length(unique(mba_wkend$Transaction))) %>%
+  ggplot(aes(x = as.factor(Hour), y = Avg_No_of_transaction, fill = as.factor(Hour))) +
+  geom_bar(stat = 'identity',alpha=0.8) +
+  labs(title = 'Average Number of Transactions of Farm House by Hour',
+       x = 'Hours', y = 'Avg No. of Transaction') +
+  scale_fill_manual(values = colorRampPalette(c('#ecc78d','#2e0a05'))(nb.cols)) +
+  theme_minimal() +
+  theme(legend.position = "none",
+plot.title = element_text(size=8),
+axis.title.x = element_text(size=8),
+axis.title.y = element_text(size=8)
+)
+
+grid.arrange(p1, p2,
+             nrow=1,ncol=2,
+             top = textGrob("Average Transaction Frequency by Hours",
+                            gp=gpar(fontsize=14,font=3)))
+```
+It is obvious from the figure above that these two items are purchased in the mornings as breakfast. 
+- To encourage more sales of these two items in the afternoons, maybe include them as an option in the combo with the cake and drinks.
+
+```{r}
+mba_wkend%>%filter(Item=='Pastry')%>%
+  group_by(as.factor(Hour))%>%
+  mutate(Avg_No_of_transaction = length(unique(Transaction))/length(unique(mba_wkend$Transaction))) %>%
+  ggplot(aes(x = as.factor(Hour), y = Avg_No_of_transaction, fill = as.factor(Hour))) +
+  geom_bar(stat = 'identity',alpha=0.8) +
+  labs(title = 'Average Number of Transactions of Pastry by Hour',
+       x = 'Hours', y = 'Avg No. of Transaction') +
+  scale_fill_manual(values = colorRampPalette(c('#ecc78d','#2e0a05'))(nb.cols)) +
+  theme_minimal() +
+  theme(legend.position = "none",
+plot.title = element_text(size=8),
+axis.title.x = element_text(size=8),
+axis.title.y = element_text(size=8)
+)
+
+```
+Finally, we also explore the distribution of the sales of Pastry by hours since Pastry is also often associated with coffee and hot chocolate. Just as Medialuna, pastry is also often bought in the mornings. To boost the sales of pastry in the afternoons, we also recommend including pastry with the afternoon combo set with cake and drinks. Or since hot chocolate is often bought in the afternoons, we could also recommend creating combos of hot chocolate and pastry to encourage its sales in the afternoons.  
 
 ***Updates till here only***
 
@@ -1261,7 +1404,7 @@ XXXXXX
 ```{r}
 
 fviz_nbclust(
-  df_merged_cluster,
+  cluster_wkday,
   kmeans,
   k.max = 10,
   method = "wss"
@@ -1269,7 +1412,7 @@ fviz_nbclust(
 
 
 fviz_nbclust(
-  df_merged_cluster,
+  cluster_wkday,
   kmeans,
   k.max = 10,
   method = "silhouette"
@@ -1281,10 +1424,12 @@ Both figures suggest that the best K should be 2. So we will start with k = 2.
 
 ```{r}
 
-km_out_2 <- kmeans(df_merged_cluster, 2, nstart = 25)
+km_out_2 <- kmeans(cluster_wkday, 2, nstart = 25)
 
-fviz_cluster(km_out_2, df_merged_cluster, geom = 'point', ellipse.type = 'norm',
+fviz_cluster(km_out_2, cluster_wkday, geom = 'point', ellipse.type = 'norm',
              main = 'K-Means Clustering Results with K=2')
+
+
 
 ```
 
