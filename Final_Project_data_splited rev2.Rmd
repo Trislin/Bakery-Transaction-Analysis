@@ -39,24 +39,24 @@ cookiecol<-c('#ad6a1d','#9a5327','#cc8d4a','#4e1703','#ecc78d','#2e0a05','#d0dfe
 
 ```
 
-#1 Background
+# 1 Background
 
 The main dataset is the transaction record of a bakery (https://www.kaggle.com/sulmansarwar/transactions-from-a-bakery). Though not specified in the description of the dataset, it is implied that this bakery is located in the old town of Edinburgh, UK. The dataset is downloaded from kaggle and stored under the same path as this R markdown file.
 
 In order to supplement the dataset with more features, we extract the historical weather records from Meteostat (https://dev.meteostat.net/python/hourly.html#response-parameters). We use the weather data recorded by a weather station in Edinburgh Airport, which is about 8 miles away from the Edinburgh old town. The dataset is downloaded and stored under the same path of this R markdown file.
 
-#2 Questions To Be Answered
+# 2 Questions To Be Answered
 
 Combining the bakery transaction record and the historical weather record, there are few questions we could further explore, such as:
 
 1. Knowing the date, hour, and weather forecast, to predict the number of transactions during that specific hour.
 
-2. Knowing the date, hour, weather forecast and other information, to predict whether a transaction will include the purchase of any kind of bread.
+2. Which items tend to be purchased together?
 
-3. Are there any items which are always brought together?
+3. Is there any cluster of the transactions?
 
 
-#3 Data Cleaning and Wrangling
+# 3 Data Cleaning and Wrangling
 
 ## 3.1 Read The Dataset
 
@@ -157,7 +157,7 @@ axis.text = element_text(size=8),
 
 ```
 
-Looking at the distribution of transactions by hours, we noticed that the trend for Saturday and Sunday are similar and are different from the ones of the other days. Therefore, it makes sense to group Saturday and Sunday together, though Sunday has less transactions comparing with Saturday.
+Looking at the distribution of transactions by hours, we noticed that the trend for Saturday and Sunday are similar and are different from the ones of the other days. Therefore, it makes sense to group Saturday and Sunday together, though Sunday has less transactions comparing with Saturday. This also implies that we may want to split the dataset into weekdays data and weekend data to perform further analysis.
 
 ```{r}
 df$Weekend <- mapvalues(df$Weekday,
@@ -413,7 +413,7 @@ df_weather$coco[is.na(df_weather$coco)] <- 0
 
 df_weather <- df_weather %>% tidyr::fill(wdir, .direction = "up")
 df_weather <- df_weather %>% tidyr::fill(wspd, .direction = "up")
-#df_weather <- df_weather %>% tidyr::fill(pres, .direction = "up")
+
 
 ```
 
@@ -482,7 +482,8 @@ df_weekend<-df_merged_reg%>%
 summary(df_weekend)
 ```
 
-Next, we plot scatter plots of number of transaction against different weather features, respectively
+Next, we plot scatter plots of number of transaction against different weather features, respectively.
+
 ```{r}
 # scatter plots of number of transaction against different weather features, respectively
 temp<-df_merged_reg%>%ggplot(aes(temp,No_of_transaction)) + 
@@ -512,7 +513,7 @@ grid.arrange(temp,ws,hum,wcc, nrow = 2)
 ```
 
 
-### 3.5.3 Market Basket Analysis
+### 3.5.2 Market Basket Analysis
 
 Here we will construct the dataset to perform market basket analysis at a later stage.
 
@@ -568,37 +569,24 @@ mba_wkend<-df_merged_mba_item%>%
 
 ```
 
-### 3.5.4 Study The Clusters of Transactions
+### 3.5.3 Study The Clusters of Transactions
 
-On top of the database constructed during chapter 3.5.2, here we will add the number of type of items for each transaction.
+Here we will add the number of type of items for each transaction.
 
 ```{r}
-#df_merged_cluster <- ddply(df_merged,
-#                           ~Transaction,
-#                           summarise,
-#                           No_Item_Type = length(unique(Item)))
 
 df_merged_cluster<-df_merged%>%group_by(Transaction)%>%
   mutate(No_Item_Type = length(unique(Item)))%>%
   ungroup()%>%
-  select(-Transaction,-Item, -Weekday,-Date)%>%
+  select(-Transaction,-Item, -Item_Type, -Weekday,-Date)%>%
   unique()%>%
   data.frame()
 
-df_merged_cluster[,c(2:11)]<-sapply(df_merged_cluster[,c(2:11)], as.numeric)
+df_merged_cluster[,c(2:10)]<-sapply(df_merged_cluster[,c(2:10)], as.numeric)
 
 cluster_wkday<-df_merged_cluster%>%filter(Weekend==0)%>%select(-Weekend)%>%data.frame()
 cluster_wkend<-df_merged_cluster%>%filter(Weekend==1)%>%select(-Weekend)%>%data.frame()
 
-#df_merged_cluster <- merge(x = df_merged_cluster,
-                           #y = df_merged_clas,
-                           #by = 'Transaction')
-
-#df_merged_cluster <- distinct(df_merged_cluster)
-
-# remove the transaction ID and Weekday
-#df_merged_cluster <- subset(df_merged_cluster,
-                            #select = -c(Transaction, Weekday))
 
 summary(cluster_wkday)
 summary(cluster_wkend)
@@ -606,9 +594,9 @@ summary(cluster_wkend)
 
 
 
-#4 Modeling and Analysis
+# 4 Modeling and Analysis
 
-##4.1 Predicting The Number of Transactions
+## 4.1 Predicting The Number of Transactions
 
 The task of this analysis is to predict the number of transactions during that specific hour, knowing the date, hour, and weather forecast. More importantly, from the model created, we expert to further understand how the sales is driven by external variables, such as weather, day of the week, time of the day and so on.
 
@@ -617,19 +605,15 @@ Firstly, we will split the dataset into training set and validation set.
 ```{r}
 set.seed(0)
 
-# Here we will drop some features from the model
-
-#df_merged_reg <- subset(df_merged_reg,
-#                        #select = -c(Weekday))
-#                        select = -c(Weekday, Hour))
-
 train_wkday<-sample(1:nrow(df_weekday), round(0.8*dim(df_weekday)[1]))
 train_wkend <- sample(1:nrow(df_weekend), round(0.8*dim(df_weekend)[1]))
 num_features <- dim(df_weekday)[2]
 
 ```
 
-Lasso- I want to explore what model Lasso will provide
+### 4.1.1 Lasso Regression Model
+
+We will start with Lasso regression model.
 **Weekday**
 ```{r}
 x_wkday <- model.matrix(No_of_transaction~.,df_weekday)[,-1]
@@ -651,12 +635,14 @@ plot(cv.out)
 
 ```
 
-test MSE of the model chosen by lasso
+Then we run the lasso model on the test set to see the RMSE.
+
 ```{r}
 bestlam=cv.out$lambda.min
 lasso.pred=predict(lasso.mod,s=bestlam,newx=x_wkday[-train_wkday,])
 #RMSE
-sqrt(mean((lasso.pred-y.test_wkday)^2))
+lasso_RMSE_wkday <- sqrt(mean((lasso.pred-y.test_wkday)^2))
+lasso_RMSE_wkday
 
 ```
 
@@ -691,12 +677,14 @@ cv.out=cv.glmnet(x_wkend[train_wkend,],y_wkend[train_wkend],alpha=1)
 plot(cv.out)
 ```
 
-test MSE of the model chosen by lasso
+The test set RMSE of the model chosen by lasso is
+
 ```{r}
 bestlam=cv.out$lambda.min
 lasso.pred=predict(lasso.mod,s=bestlam,newx=x_wkend[-train_wkend,])
 #RMSE
-sqrt(mean((lasso.pred-y.test_wkend)^2))
+lasso_RMSE_wkend <- sqrt(mean((lasso.pred-y.test_wkend)^2))
+lasso_RMSE_wkend
 
 ```
 
@@ -710,8 +698,10 @@ lasso.coef
 lasso.coef[lasso.coef!=0]
 ```
 
+### 4.1.2 Random Forest Modle and GBM Modle
+
 ***Random Forest***
-Secondly, we set up our baseline regression model - random forest regression model. We will try several different sets of hyperparameters, including 'mtry' and 'ntree' to figure out the best random forest regression model as baseline.
+Secondly, we try another model - random forest regression model. We will try several different sets of hyperparameters, including 'mtry' and 'ntree' to figure out the best random forest regression model as baseline.
 **Weekday**
 ```{r}
 search_grid <- expand.grid(mtry = c(round(num_features/3/2),
@@ -819,8 +809,12 @@ rf_RMSE_test_wkday <- caret::RMSE(rf_pred_test_wkday, df_weekday[-train_wkday, ]
 
 print(paste0('RMSE of the boosting model on Weekday testing set:', round(boost_RMSE_test_wkday, 4)))
 print(paste0('RMSE of the random forest model on Weekday testing set:', round(rf_RMSE_test_wkday, 4)))
+print(paste0('RMSE of the lasso regression model on Weekday testing set:', round(lasso_RMSE_wkday, 4)))
 
 ```
+
+For weekdays data, it turns out that the random forest model performs the best on the test set in term of RMSE. So we will choose the random forest model to explain how different features impact the number of transactions in a certain hour during a weekday. For the random forest model, the RMSE on the training set is `r round(sqrt(mean(rf_reg_best_wkday$mse)), 4)`, which doesn't suggest the risk of overfitting. However, one thing worth-noting is that our random forest could only explain 34% of variance. This is probably due to the very limited amount of features we have in our original dataset. 
+
 
 **Weekend**
 ```{r}
@@ -927,11 +921,14 @@ rf_RMSE_test_wkend <- caret::RMSE(rf_pred_test_wkend, df_weekend[-train_wkend, ]
 
 print(paste0('RMSE of the boosting model on Weekend testing set:', round(boost_RMSE_test_wkend, 4)))
 print(paste0('RMSE of the random forest model on Weekend testing set:', round(rf_RMSE_test_wkend, 4)))
+print(paste0('RMSE of the lasso regression model on Weekend testing set:', round(lasso_RMSE_wkend, 4)))
 
 ```
 
 
-It seems that the random forest model selected performs better than the other model selected. For the random forest model, the RMSE on the training set is `r round(sqrt(mean(rf_reg_best$mse)), 4)`, which doesn't suggest the risk of overfitting.
+Same as the case of weekday data, for weekend data, it seems that the random forest model selected performs better than the other model selected. For the random forest model, the RMSE on the training set is `r round(sqrt(mean(rf_reg_best_wkend$mse)), 4)`, which doesn't suggest the risk of overfitting. However, only 41% of variace could be explained by the selected random forest model. This is probably again due to the fact that we only have very limited features in our original dataset.
+
+### 4.1.3 Impact of Features
 
 Now that we have the regression model constructed, we would like to further understand the impact of different features.
 
@@ -941,7 +938,7 @@ varImpPlot(rf_reg_best_wkday)
 
 ```
 
-The most important factors are whether the time is in the rush hours - this is not surprising. What's interesting is that the weather related variables have similar level impact on node purity as the one of whether a day is weekend. We use partial dependence plot here to further understand the impact of weather related variables.
+The most important factors are the time when the transaction happened and whether the time is the rush hours - this is not surprising. What's interesting is that the weather related variables follow right after. We use partial dependence plot here to further understand the impact of weather related variables.
 
 **Weekday**
 ```{r, fig.width=7,fig.width=7}
@@ -958,19 +955,21 @@ From the partial dependence plot for Weekday data, we could learn that:
 
 1. Temperature seems to have a U-shape effect on number of transactions. When the temperature is approximately below 2 Celsius, number of transactions decreases as temperature increases; when it is approximately above 2 Celsius, number of transactions increases as temperature increases. Potentially because during weekdays, there could be increasing number of transactions during rush hour, especially in the morning, when the temperature tends to be low. 
 
-2. When there is the north wind or north-east wind (direction of wind between 350 and 56), the sales will be higher than the case when the wind is blowing from other directions.
+2. When there is north wind or north-west wind (270-350), the sales will be higher than the case when the wind is blowing from other directions.
 
 3. Average-level humidity seems to have a positive effect on number of transactions; however, when humidity is close to or over 90, which suggests raining weather, there is a sharp decrease, showing a negative effect on number of transactions. 
 
 4. Stronger wind has negative impact on the sales
 
-To sum up, the most important variable in forecasting the number of transactions at a given time is whether it is during the rush hour. Also, different weather related variables have different impact on the number of transaction - so watch the weather forecast and be prepared.
+To sum up, the most important variable in forecasting the number of transactions at a given time is whether it is during the rush hour. Also, different weather related variables have different impact on the number of transaction - so a practical suggestion to the bakery is to watch the weather forecast and be prepared.
 
 **Weekend**
 ```{r, fig.width=7,fig.width=7}
 varImpPlot(rf_reg_best_wkend)
 
 ```
+
+Similar as the case of weekdays, the hour when a transaction happened and whether it is during rush-hours are the most important features. Then the weather related variables also contribute in the model.
 
 **Weekend**
 ```{r, fig.width=7,fig.width=7}
@@ -982,22 +981,22 @@ partialPlot(rf_reg_best_wkend, df_weekend[train_wkend, ], x.var = 'temp')
 
 
 ```
+
 From the partial dependence plot for Weekend data, we could learn that:
 
-1. Interestingly, in contrast to the data in weekdays, temperature no longer has a U-shape effect; instead, overall, as temperature increases, number of transactions increases. 
+1. Interestingly, in contrast to the data in weekdays, temperature no longer has a U-shape effect; instead, overall, as temperature increases, number of transactions increases. That's probably because no one needs to go buy breakfast in a cold Saturday or Sunday morning.
 
 2. In weekends, when there is north wind or north-west wind (270-350), there is a huge increase in number of transactions. 
 
-3. In weekends, as humidity increases, number of transactions decreases overall. 
+3. In weekends, as humidity increases, number of transactions decreases overall. Indeed, it decreases dramatically once the humidity is higher than 40. The reason why it is different comparing with weekday would be that only few people will hang out if weather condition is not good in a weekend.
 
 4. Just as weekdays, wind speed has a negative effect on number of transactions.
 
+Comparing with the weekday case, the humidity and temperature impact the number of transactions differently. People have to go to work in weekdays regardless of the weather. But during weekend, the weather condition will play a more important role when people decide whether to go to the bakery.
 
-Maybe weather-related variables are more meaningful for weekend data, since people have to go to work in weekdays regardless of the weather? 
+## 4.2 Market Basket Analysis
 
-##4.3 Market Basket Analysis
-
-The objective of this analysis is to identify possible association rules. For example, assuming we identify from the data that people who buy cake tend to buy cookie at the same time, then the bakery could consider to place these two item closer in the shop in order to boost the sales.
+The objective of this analysis is to identify possible association rules. For example, assuming we identify from the data that people who buy cake tend to buy cookie at the same time, then the bakery could consider to place these two item closer in the shop, or create bundle sales in order to boost the sales.
 
 We have already re-grouped different items, so for this analysis, we will start from looking at the association rules among item types.
 
@@ -1026,6 +1025,8 @@ head(rules_Item_Type_dt, 10)
 From the table we observe that the highest lift of all rules is still smaller than 1. That says, no valid association rules identified among the item types.
 
 Then we focus our market basket analysis on the detail list of items, instead of the category. Here we will analyze weekdays and weekends separately, as we are expecting different purchase behaviors.
+
+### 4.2.1 Weekday Dataset Analysis and Discussion
 
 **Weekday**
 
@@ -1061,6 +1062,7 @@ ig <- plot( subrules2, method="graph",
             control=list(type="items") )
 
 ```
+
 Few observations could be made from the table:
 
 During weekdays
@@ -1074,6 +1076,7 @@ During weekdays
 4. People who buy sweets, such as scone and cake, tends to buy tea at the same time.
 
 To further explore the finding #4, we plot the distribution of transactions including scone or cake by hours.
+
 ```{r}
 p1<-mba_wkday%>%filter(Item=='Scone')%>%
   group_by(as.factor(Hour))%>%
@@ -1124,7 +1127,7 @@ Based on the above, maybe we could recommend the bakery, for weekdays:
 
 4. To create bundles sales for afternoon snack and tea 
 
-
+### 4.2.2 Weekend Dataset Analysis and Discussion
 
 **Weekend**
 ```{r}
@@ -1163,16 +1166,10 @@ ig <- plot( subrules2, method="graph",
 
 In weekends, the association rules concentrate on few items, including cake, tea, coffee, hot chocolate, and scone. One thing worth-noting is that cake is in the center of the graph. In other words, people tends to buy cake when they are purchasing bunch of other items. The association rules also suggest that people sometime buy items to share with others, as there are transactions including both coffee and tea or coffee and hot chocolate.
 
-Based on the observations, the recommendations to the bakery would be:
-
-1. During weekends, place the cake in a visible place closer to the cashier
-
-2. Keep the combo of multiple drinks and cake 
-
-As cake is the center of the associations, we are also curious when the sales of cakes peak and how the sales of different drinks associated with cakes vary by the hours of the day. 
+Since cake is the center of the associations, we are curious when the sales of cakes peak and how the sales of different drinks associated with cakes vary by the hours of the day. 
 
 ```{r}
-p3<-mba_wkday%>%filter(Item=='Cake')%>%
+p3<-mba_wkend%>%filter(Item=='Cake')%>%
   group_by(as.factor(Hour))%>%
   mutate(Avg_No_of_transaction = length(unique(Transaction))/length(unique(mba_wkend$Transaction))) %>%
   ggplot(aes(x = as.factor(Hour), y = Avg_No_of_transaction, fill = as.factor(Hour))) +
@@ -1187,7 +1184,7 @@ axis.title.x = element_text(size=8),
 axis.title.y = element_text(size=8)
 )
 
-p4<-mba_wkday%>%filter(Item=='Coffee')%>%
+p4<-mba_wkend%>%filter(Item=='Coffee')%>%
   group_by(as.factor(Hour))%>%
   mutate(Avg_No_of_transaction = length(unique(Transaction))/length(unique(mba_wkend$Transaction))) %>%
   ggplot(aes(x = as.factor(Hour), y = Avg_No_of_transaction, fill = as.factor(Hour))) +
@@ -1202,7 +1199,7 @@ axis.title.x = element_text(size=8),
 axis.title.y = element_text(size=8)
 )
 
-p5<-mba_wkday%>%filter(Item=='Tea')%>%
+p5<-mba_wkend%>%filter(Item=='Tea')%>%
   group_by(as.factor(Hour))%>%
   mutate(Avg_No_of_transaction = length(unique(Transaction))/length(unique(mba_wkend$Transaction))) %>%
   ggplot(aes(x = as.factor(Hour), y = Avg_No_of_transaction, fill = as.factor(Hour))) +
@@ -1217,7 +1214,7 @@ axis.title.x = element_text(size=8),
 axis.title.y = element_text(size=8)
 )
 
-p6<-mba_wkday%>%filter(Item=='Hot chocolate')%>%
+p6<-mba_wkend%>%filter(Item=='Hot chocolate')%>%
   group_by(as.factor(Hour))%>%
   mutate(Avg_No_of_transaction = length(unique(Transaction))/length(unique(mba_wkend$Transaction))) %>%
   ggplot(aes(x = as.factor(Hour), y = Avg_No_of_transaction, fill = as.factor(Hour))) +
@@ -1238,9 +1235,10 @@ grid.arrange(p3,p4, p5,p6,
                             gp=gpar(fontsize=14,font=3)))
 
 ```
-From the figures above, coffee is sold more in the morning, as opposed to tea and hot chocolate. Sales of cake peak in the afternoon, and so as tea and hot chocolate. It is likely that in weekends, people hang out together at the bakery to get the cake and multiple drinks. The bakey could make a special weekend afternoon combo for cake and drinks.
+From the figures above, coffee and hot chocolate are sold more in the morning, as opposed to tea and hot chocolate. Sales of cake peak in the afternoon. It is likely that in weekends, people hang out together at the bakery to get the cake and multiple drinks. The bakery could make a special weekend afternoon combo for cake and drinks.
 
-To further explore the top association between Farm House and Medialuna, we plot the distribution of these two items by hours
+To further explore the top association between Farm House and Medialuna, we plot the distribution of these two items by hours.
+
 ```{r}
 p1<-mba_wkend%>%filter(Item=='Medialuna')%>%
   group_by(as.factor(Hour))%>%
@@ -1257,7 +1255,7 @@ axis.title.x = element_text(size=8),
 axis.title.y = element_text(size=8)
 )
 
-p2<-mba_wkday%>%filter(Item=='Farm House')%>%
+p2<-mba_wkend%>%filter(Item=='Farm House')%>%
   group_by(as.factor(Hour))%>%
   mutate(Avg_No_of_transaction = length(unique(Transaction))/length(unique(mba_wkend$Transaction))) %>%
   ggplot(aes(x = as.factor(Hour), y = Avg_No_of_transaction, fill = as.factor(Hour))) +
@@ -1277,6 +1275,7 @@ grid.arrange(p1, p2,
              top = textGrob("Average Transaction Frequency by Hours",
                             gp=gpar(fontsize=14,font=3)))
 ```
+
 It is obvious from the figure above that these two items are purchased in the mornings as breakfast. 
 - To encourage more sales of these two items in the afternoons, maybe include them as an option in the combo with the cake and drinks.
 
@@ -1297,110 +1296,23 @@ axis.title.y = element_text(size=8)
 )
 
 ```
+
 Finally, we also explore the distribution of the sales of Pastry by hours since Pastry is also often associated with coffee and hot chocolate. Just as Medialuna, pastry is also often bought in the mornings. To boost the sales of pastry in the afternoons, we also recommend including pastry with the afternoon combo set with cake and drinks. Or since hot chocolate is often bought in the afternoons, we could also recommend creating combos of hot chocolate and pastry to encourage its sales in the afternoons.  
 
-***Updates till here only***
+Based on the observations, the recommendations to the bakery would be:
 
-```{r}
+1. During weekends, place the cake in a visible place closer to the cashier
 
-p1<-df%>%filter(Item=='Toast')%>%
-  group_by(as.factor(Hour))%>%
-  mutate(Avg_No_of_transaction = length(unique(Transaction))/length(unique(df$Transaction))) %>%
-  ggplot(aes(x = as.factor(Hour), y = Avg_No_of_transaction, fill = as.factor(Hour))) +
-  geom_bar(stat = 'identity',alpha=0.8) +
-  labs(title = 'Average Number of Transactions of Toast by Hour',
-       x = 'Hours', y = 'Avg No. of Transaction') +
-  scale_fill_manual(values = colorRampPalette(c('#ecc78d','#2e0a05'))(nb.cols)) +
-  theme_minimal() +
-  theme(legend.position = "none",
-plot.title = element_text(size=8),
-axis.title.x = element_text(size=8),
-axis.title.y = element_text(size=8)
-)
-
-p2<-df%>%filter(Item=='Spanish Brunch')%>%
-  group_by(as.factor(Hour))%>%
-  mutate(Avg_No_of_transaction = length(unique(Transaction))/length(unique(df$Transaction))) %>%
-  ggplot(aes(x = as.factor(Hour), y = Avg_No_of_transaction, fill = as.factor(Hour))) +
-  geom_bar(stat = 'identity',alpha=0.8) +
-  labs(title = 'Average Number of Transactions of Spanish Brunch by Hour',
-       x = 'Hours', y = 'Avg No. of Transaction') +
-  scale_fill_manual(values = colorRampPalette(c('#ecc78d','#2e0a05'))(nb.cols)) +
-  theme_minimal() +
-  theme(legend.position = "none",
-plot.title = element_text(size=8),
-axis.title.x = element_text(size=8),
-axis.title.y = element_text(size=8)
-)
-
-p3<-df%>%filter(Item=='Medialuna')%>%
-  group_by(as.factor(Hour))%>%
-  mutate(Avg_No_of_transaction = length(unique(Transaction))/length(unique(df$Transaction))) %>%
-  ggplot(aes(x = as.factor(Hour), y = Avg_No_of_transaction, fill = as.factor(Hour))) +
-  geom_bar(stat = 'identity',alpha=0.8) +
-  labs(title = 'Average Number of Transactions of Medialuna by Hour',
-       x = 'Hours', y = 'Avg No. of Transaction') +
-  scale_fill_manual(values = colorRampPalette(c('#ecc78d','#2e0a05'))(nb.cols)) +
-  theme_minimal() +
-  theme(legend.position = "none",
-plot.title = element_text(size=8),
-axis.title.x = element_text(size=8),
-axis.title.y = element_text(size=8)
-)
-
-p4<-df%>%filter(Item=='Pastry')%>%
-  group_by(as.factor(Hour))%>%
-  mutate(Avg_No_of_transaction = length(unique(Transaction))/length(unique(df$Transaction))) %>%
-  ggplot(aes(x = as.factor(Hour), y = Avg_No_of_transaction, fill = as.factor(Hour))) +
-  geom_bar(stat = 'identity',alpha=0.8) +
-  labs(title = 'Average Number of Transactions of Pastry by Hour',
-       x = 'Hours', y = 'Avg No. of Transaction') +
-  scale_fill_manual(values = colorRampPalette(c('#ecc78d','#2e0a05'))(nb.cols)) +
-  theme_minimal() +
-  theme(legend.position = "none",
-plot.title = element_text(size=8),
-axis.title.x = element_text(size=8),
-axis.title.y = element_text(size=8)
-)
+2. Keep the combo of multiple drinks and cake 
 
 
-grid.arrange(p1, p2, p3, p4,
-             nrow=2,ncol=2,
-             top = textGrob("Average Transaction Frequency by Hours",
-                            gp=gpar(fontsize=14,font=3)))
+## 4.3 Clustering Analysis and Discussion
 
-```
+In this section, we will explore the different clusters of transactions, if there is any.
 
-It turns out that Spanish brunch is sold more during lunch hour. This indeed brings another question - is people buying more Spanish brunch during the workdays or during the weekends?
+### 4.3.1 Clustering on Weekday Dataset
 
-
-```{r}
-df%>%filter(Item=='Spanish Brunch')%>%
-  group_by(as.factor(Hour))%>%
-  mutate(Avg_No_of_transaction = length(unique(Transaction))/length(unique(df$Transaction))) %>%
-  ggplot(aes(x = as.factor(Weekday), y = Avg_No_of_transaction, fill = as.factor(Weekday))) +
-  geom_bar(stat = 'identity',alpha=0.8) +
-  labs(title = 'Average Number of Transactions of Spanish Brunch by Hour',
-       x = 'Hours', y = 'Avg No. of Transaction') +
-  scale_fill_manual(values = colorRampPalette(c('#ecc78d','#2e0a05'))(nb.cols)) +
-  theme_minimal() +
-  theme(legend.position = "none",
-plot.title = element_text(size=8),
-axis.title.x = element_text(size=8),
-axis.title.y = element_text(size=8)
-)
-```
-
-It could be observed that Spanish brunch is sold more during the weekends. In a nutshell, there are two suggestions to the Bakery from analyzing the association rules:
-
-1. Promote bundles of toast and coffee, medialuna and coffee, and pastry and coffee, boosting the sales of both.
-
-2. Promote bundles of Spanish brunch and coffee during the weekends, trying to boost the sales of both.
-
-##4.4 Clustering
-
-XXXXXX
-
+**Weekday**
 ```{r}
 
 fviz_nbclust(
@@ -1427,31 +1339,79 @@ Both figures suggest that the best K should be 2. So we will start with k = 2.
 km_out_2 <- kmeans(cluster_wkday, 2, nstart = 25)
 
 fviz_cluster(km_out_2, cluster_wkday, geom = 'point', ellipse.type = 'norm',
-             main = 'K-Means Clustering Results with K=2')
-
-
+             main = 'Weekday Dataset: K-Means Clustering Results with K=2')
 
 ```
 
-Apparently, PCA might not be the ideal way to extract the features for visualization. The first and second principle components together could only explain 30% of variance.
+Apparently, PCA might not be the ideal way to extract the features for visualization. The first and second principle components together could only explain 37% of variance.
+
+Then to understand how well we split the transactions into two clusters, here we compare the centers of the clusters.
 
 ```{r}
-library(Rtsne)
-
-df_merged_cluster <- distinct(df_merged_cluster)
-
-tsne_out <- Rtsne(df_merged_cluster,
-                  dims = 2,
-                  initial_dims = 30,
-                  perplexity = 150)
-plot(tsne_out$Y)
+km_out_2$centers
 
 ```
+
+The major difference between the center of two clusters is the direction of wind. This is difficult to explain and therefore we doubt whether the current clustering makes sense.
+
+### 4.3.2 Clustering on Weekend Dataset
+
+**Weekend**
 
 ```{r}
-plot(tsne_out$Y)
+fviz_nbclust(
+  cluster_wkend,
+  kmeans,
+  k.max = 10,
+  method = "wss"
+)
+
+
+fviz_nbclust(
+  cluster_wkend,
+  kmeans,
+  k.max = 10,
+  method = "silhouette"
+)
+
 ```
 
-#5 Conclusion
+Both figures suggest that the best K should be 2. So we will start with k = 2.
 
-#6 xxx
+```{r}
+
+km_out_2 <- kmeans(cluster_wkend, 2, nstart = 25)
+
+fviz_cluster(km_out_2, cluster_wkend, geom = 'point', ellipse.type = 'norm',
+             main = 'Weekday Dataset: K-Means Clustering Results with K=2')
+
+```
+
+Same as the weekdays dataset, PCA might not be the ideal way to extract the features for visualization. The first and second principle components together could only explain 38% of variance.
+
+Then to understand how well we split the transactions into two clusters, here we compare the centers of the clusters.
+
+```{r}
+km_out_2$centers
+
+```
+
+Again, the major difference between the center of two clusters is the direction of wind. This is difficult to explain and therefore we doubt whether the current clustering makes sense.
+
+To sum up, we are not able to come up with a meaningful split of transactions into clusters. On one hand, we only tried with k-means. On the other hand, we have very limited features in the original dataset.
+
+# 5 Conclusion & Next Steps
+
+In a nutshell, with the bakery transaction data and weather record data, we first explored how different features influencing the number of transactions, especially those weather-related variables. Then we dived into the association rules from the transaction history, identified purchasing patterns, and provided recommendations for the bakery to further increase sales. Lastly we tried to cluster the transactions into different segments, but the result is not satisfying.
+
+The major next steps of this analysis are:
+
+1. When predicting the number of transactions, the selected random forest model could only explain 30% - 40% of variance. We will need to either acquire more data beyond Oct 2016 and Apr 2017, or get more new features. Our current features only include date, time, name of items, and weather. If we could manage to get the information of the client, we could further improve our model to perform the prediction task.
+
+2. The association rules we identified has low support in general. If we could get more data, we might be able to further explore the the possible rules.
+
+3. We will need features to reshape the clustering analysis. Also as next step, we could try other clustering methods, such as GMM or DPGMM.
+
+4. Whether a day is a public holiday or not is not significant in any of our analysis. Part of the reason is that our dataset only lasts 6 months. If we could acquire more data, covering several years, we could further explore the impact of holiday on the sales of the bakery.
+
+
