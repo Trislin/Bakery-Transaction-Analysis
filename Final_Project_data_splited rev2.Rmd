@@ -35,7 +35,7 @@ library(arulesViz)
 library(DMwR)
 
 nb.cols <- 18
-mycolors <- colorRampPalette(brewer.pal(8, "Blues"))(nb.cols)
+mycolors <- colorRampPalette(brewer.pal(8, "BrBG"))(nb.cols)
 cookiecol<-c('#ad6a1d','#9a5327','#cc8d4a','#4e1703','#ecc78d','#2e0a05','#d0dfe4','#33575b', '#173742')
 
 ```
@@ -134,7 +134,7 @@ res <- ddply(df, ~Weekday, summarise, No_of_transaction = length(unique(Transact
 ggplot(data = res, mapping = aes(x = Weekday, y = No_of_transaction, fill = Weekday)) +
   geom_bar(stat = 'identity',width=0.7,alpha=0.8) +
   labs(title = 'No. of Transactions by Weekdays', x = 'Weekdays', y = 'Number of Transactions') +
-  scale_fill_brewer(palette = "Blues") +
+  scale_fill_brewer(palette = "BrBG") +
   theme_minimal()
 
 
@@ -576,10 +576,11 @@ Here we will add the number of type of items for each transaction.
 
 ```{r}
 
-df_merged_cluster<-df_merged%>%group_by(Transaction)%>%
-  mutate(No_Item_Type = length(unique(Item)))%>%
-  ungroup()%>%
-  select(-Transaction,-Item, -Item_Type, -Weekday,-Date)%>%
+df_merged_cluster<-df_merged%>%
+  #group_by(Transaction)%>%
+  #mutate(No_Item_Type = length(unique(Item)))%>%
+  #ungroup()%>%
+  select(-Transaction,-Item, -Weekday,-Date)%>%
   unique()%>%
   data.frame()
 
@@ -644,7 +645,6 @@ lasso.pred=predict(lasso.mod,s=bestlam,newx=x_wkday[-train_wkday,])
 #RMSE
 lasso_RMSE_wkday <- sqrt(mean((lasso.pred-y.test_wkday)^2))
 lasso_RMSE_wkday
-
 ```
 
 ```{r}
@@ -1018,8 +1018,7 @@ rules_Item_Type <- rules_Item_Type[!is.redundant(rules_Item_Type)]
 rules_Item_Type_dt <- data.table( lhs = labels( lhs(rules_Item_Type) ), 
                         rhs = labels( rhs(rules_Item_Type) ), 
                         quality(rules_Item_Type) )[ order(-lift), ]
-head(rules_Item_Type_dt, 10)
-#rules_Item_Type_dt
+kable(head(rules_Item_Type_dt, 10))
 
 ```
 
@@ -1276,22 +1275,210 @@ fviz_nbclust(
 Both figures suggest that the best K should be 6. However, after trying several different K, we decide to go with K = 3.
 
 ```{r}
-
-km_out_2 <- kmeans(cluster_wkday_scale, 3, nstart = 25)
+set.seed(0)
+km_out_2 <- kmeans(cluster_wkday_scale, 4, nstart = 25)
 
 fviz_cluster(km_out_2, cluster_wkday_scale, geom = 'point', ellipse.type = 'norm',
-             main = 'Weekday Dataset: K-Means Clustering Results with K=3')
+             main = 'Weekday Dataset: K-Means Clustering Results with K=4')
 
 ```
 
 Using PCA, we are able to visualize the clusters in a 2-D plane. Then to understand how well we split the transactions into two clusters, here we compare the centers of the clusters.
 
 ```{r}
+library('DMwR')
 unscale(km_out_2$centers, cluster_wkday_scale)
-
 ```
 
 In general, one of the clusters only contains the non-rush hour transactions. Then the other two clusters seem to be split based on weather conditions, including humidity, wind direction and wind speed.
+
+```{r}
+cluster_wkday_cbind<-cbind(km_out_2$cluster, cluster_wkday)
+cluster_wkday1<-cluster_wkday_cbind%>%filter(km_out_2$cluster==1)
+cluster_wkday2<-cluster_wkday_cbind%>%filter(km_out_2$cluster==2)
+cluster_wkday3<-cluster_wkday_cbind%>%filter(km_out_2$cluster==3)
+cluster_wkday4<-cluster_wkday_cbind%>%filter(km_out_2$cluster==4)
+```
+
+
+```{r}
+names(cluster_wkday_cbind)[1]<-'cluster_no'
+cluster_wkday_cbind$cluster_no<-as.factor(cluster_wkday_cbind$cluster_no)
+cluster_wkday_cbind %>%
+  ggplot( aes(x=as.factor(Item_Type),fill=cluster_no)) + facet_wrap(~ cluster_no) +
+    geom_bar(stat = 'count',alpha=0.6, position = 'identity', binwidth = 0.5) +
+    scale_fill_brewer(palette = 'BrBG') +
+    theme_minimal() 
+
+```
+```{r}
+names(cluster_wkday_cbind)[1]<-'cluster_no'
+cluster_wkday_cbind$cluster_no<-as.factor(cluster_wkday_cbind$cluster_no)
+cluster_wkday_cbind %>%
+  ggplot( aes(x=temp, fill=cluster_no)) + facet_wrap(~ cluster_no) +
+    geom_density( color="#e9ecef", alpha=0.6, position = 'identity') +
+    scale_fill_brewer(palette = 'BrBG') +
+    theme_minimal() +
+    labs(fill="")
+
+```
+
+```{r}
+names(cluster_wkday_cbind)[1]<-'cluster_no'
+cluster_wkday_cbind$cluster_no<-as.factor(cluster_wkday_cbind$cluster_no)
+cluster_wkday_cbind %>%
+  ggplot( aes(x=rhum, fill=cluster_no)) + facet_wrap(~ cluster_no) +
+    geom_density( color="#e9ecef", alpha=0.6, position = 'identity') +
+    scale_fill_brewer(palette = 'BrBG') +
+    theme_minimal() +
+    labs(fill="")
+
+```
+```{r}
+names(cluster_wkday_cbind)[1]<-'cluster_no'
+cluster_wkday_cbind$cluster_no<-as.factor(cluster_wkday_cbind$cluster_no)
+cluster_wkday_cbind %>%
+  ggplot( aes(x=wspd, fill=cluster_no)) + facet_wrap(~ cluster_no) +
+    geom_density( color="#e9ecef", alpha=0.6, position = 'identity') +
+    scale_fill_brewer(palette = 'BrBG') +
+    theme_minimal() +
+    labs(fill="")
+
+```
+
+```{r,fig.height=7}
+p1<-cluster_wkday1 %>%
+  ggplot(aes(x=as.factor(Item_Type))) +
+    geom_bar(stat = 'count',alpha=0.6, position = 'identity', fill=cookiecol[1]) +
+    theme_minimal() 
+p2<-cluster_wkday1 %>%
+  ggplot(aes(x=as.factor(Rush_hours))) +
+    geom_bar(stat = 'count',alpha=0.6, position = 'identity', fill=cookiecol[1]) +
+    theme_minimal() 
+p3<-cluster_wkday1 %>%
+  ggplot(aes(x=as.factor(Holiday))) +
+    geom_bar(stat = 'count',alpha=0.6, position = 'identity', fill=cookiecol[1]) +
+    theme_minimal() 
+p4<-cluster_wkday1 %>%
+ ggplot(aes(x=temp)) +
+    geom_density(color=cookiecol[1], fill=cookiecol[1], alpha=0.6, position = 'identity') +
+    theme_minimal() 
+p5<-cluster_wkday1 %>%
+ ggplot(aes(x=wspd)) +
+    geom_density(color=cookiecol[1], fill=cookiecol[1], alpha=0.6, position = 'identity') +
+    theme_minimal() 
+p6<-cluster_wkday1 %>%
+ ggplot(aes(x=rhum)) +
+    geom_density(color=cookiecol[1], fill=cookiecol[1], alpha=0.6, position = 'identity') +
+    theme_minimal() 
+grid.arrange(p1,p2,p3,p4,p5,p6, nrow=4,ncol=2)
+```
+cluster 1 represents in the non-rush-hours in non-holidays, with a mean temperature of around 7, relatively low wind speed , high humidity, and low number of transactions in different item types. 
+
+```{r,fig.height=7}
+p1<-cluster_wkday2 %>%
+  ggplot(aes(x=as.factor(Item_Type))) +
+    geom_bar(stat = 'count',alpha=0.6, position = 'identity', fill=cookiecol[5]) +
+    theme_minimal() 
+p2<-cluster_wkday2 %>%
+  ggplot(aes(x=as.factor(Rush_hours))) +
+    geom_bar(stat = 'count',alpha=0.6, position = 'identity', fill=cookiecol[5]) +
+    theme_minimal() 
+p3<-cluster_wkday2 %>%
+  ggplot(aes(x=as.factor(Holiday))) +
+    geom_bar(stat = 'count',alpha=0.6, position = 'identity', fill=cookiecol[5]) +
+    theme_minimal() 
+p4<-cluster_wkday2 %>%
+ ggplot(aes(x=temp)) +
+    geom_density(color=cookiecol[5], fill=cookiecol[5], alpha=0.6, position = 'identity') +
+    theme_minimal() 
+p5<-cluster_wkday2 %>%
+ ggplot(aes(x=wspd)) +
+    geom_density(color=cookiecol[5], fill=cookiecol[5], alpha=0.6, position = 'identity') +
+    theme_minimal() 
+p6<-cluster_wkday2 %>%
+ ggplot(aes(x=rhum)) +
+    geom_density(color=cookiecol[5], fill=cookiecol[5], alpha=0.6, position = 'identity') +
+    theme_minimal() 
+p7<-cluster_wkday2 %>%
+ ggplot(aes(x=Hour)) +
+    geom_density(color=cookiecol[5], fill=cookiecol[5], alpha=0.6, position = 'identity') +
+    theme_minimal() 
+grid.arrange(p1,p2,p3,p4,p5,p6, nrow=3,ncol=2)
+```
+Cluster 2 represents the rush hours in non-holidays, with relatively high temperature, relatively high wind speed, relatively low humidity, and relatively high number of transactions of different items. 
+
+```{r,fig.height=7}
+p1<-cluster_wkday3 %>%
+  ggplot(aes(x=as.factor(Item_Type))) +
+    geom_bar(stat = 'count',alpha=0.8, position = 'identity', fill=cookiecol[7]) +
+    theme_minimal() 
+p2<-cluster_wkday3 %>%
+  ggplot(aes(x=as.factor(Rush_hours))) +
+    geom_bar(stat = 'count',alpha=0.8, position = 'identity', fill=cookiecol[7]) +
+    theme_minimal() 
+p3<-cluster_wkday3 %>%
+  ggplot(aes(x=as.factor(Holiday))) +
+    geom_bar(stat = 'count',alpha=0.8, position = 'identity', fill=cookiecol[7]) +
+    theme_minimal() 
+p4<-cluster_wkday3 %>%
+ ggplot(aes(x=temp)) +
+    geom_density(color=cookiecol[7], fill=cookiecol[7], alpha=0.8, position = 'identity') +
+    theme_minimal() 
+p5<-cluster_wkday3 %>%
+ ggplot(aes(x=wspd)) +
+    geom_density(color=cookiecol[7], fill=cookiecol[7], alpha=0.8, position = 'identity') +
+    theme_minimal() 
+p6<-cluster_wkday3 %>%
+ ggplot(aes(x=rhum)) +
+    geom_density(color=cookiecol[7], fill=cookiecol[7], alpha=0.8, position = 'identity') +
+    theme_minimal() 
+grid.arrange(p1,p2,p3,p4,p5,p6, nrow=3,ncol=2)
+```
+Cluster 3 represents holiday data which has even lower number of transactions comparing to cluster 1 (non-rush hour in non-holiday) even though temperature is relatively higher, humidity is relatively lower.
+
+
+```{r,fig.height=7}
+p1<-cluster_wkday4 %>%
+  ggplot(aes(x=as.factor(Item_Type))) +
+    geom_bar(stat = 'count',alpha=0.6, position = 'identity', fill=cookiecol[8]) +
+    theme_minimal() 
+p2<-cluster_wkday4 %>%
+  ggplot(aes(x=as.factor(Rush_hours))) +
+    geom_bar(stat = 'count',alpha=0.6, position = 'identity', fill=cookiecol[8]) +
+    theme_minimal() 
+p3<-cluster_wkday4 %>%
+  ggplot(aes(x=as.factor(Holiday))) +
+    geom_bar(stat = 'count',alpha=0.6, position = 'identity', fill=cookiecol[8]) +
+    theme_minimal() 
+p4<-cluster_wkday4 %>%
+ ggplot(aes(x=temp)) +
+    geom_density(color=cookiecol[8], fill=cookiecol[8], alpha=0.6, position = 'identity') +
+    theme_minimal() 
+p5<-cluster_wkday4 %>%
+ ggplot(aes(x=wspd)) +
+    geom_density(color=cookiecol[8], fill=cookiecol[8], alpha=0.6, position = 'identity') +
+    theme_minimal() 
+p6<-cluster_wkday4 %>%
+ ggplot(aes(x=rhum)) +
+    geom_density(color=cookiecol[8], fill=cookiecol[8], alpha=0.6, position = 'identity') +
+    theme_minimal() 
+grid.arrange(p1,p2,p3,p4,p5,p6, nrow=3,ncol=2)
+```
+
+cluster 4 represents (mostly) rush-hours in non-holiday, with a mean temperature of close to 5, relatively low wind speed, relatively high humidity, and relatively higher number of transactions in different item types.
+
+To compare cluster 2 and 4 which are both rush hours in non-holidays, cluster 4 includes lower temperature, lower wind speed, lower humidity, and relatively lower number transactions of items except for bread. 
+
+
+In conclusion: 
+
+During non-holidays,in rush hours in weekdays with lower temperature, there tends to be relatively fewer number of transactions in items except for bread comparing to those days with higher temperature, even if the wind speed is lower or humidity is lower.  
+
+Comparing to cluster 1, which represents non-rush hours, overall number of transactions is less than that in rush hours as represented by both cluster 1 and 3.
+
+Comparing to cluster 4, which represents holiday, overall number of transactions is the least among all clusters. 
+
 
 ### 4.3.2 Clustering on Weekend Dataset
 
@@ -1320,7 +1507,7 @@ fviz_nbclust(
 Both figures suggest that the best K should be 8. However, after trying several differnt K, we select K = 3.
 
 ```{r}
-
+set.seed(0)
 km_out_2 <- kmeans(cluster_wkend_scale, 3, nstart = 25)
 
 fviz_cluster(km_out_2, cluster_wkend_scale, geom = 'point', ellipse.type = 'norm',
@@ -1334,6 +1521,173 @@ Then to understand how well we split the transactions into two clusters, here we
 unscale(km_out_2$centers, cluster_wkend_scale)
 
 ```
+
+```{r}
+cluster_wkend_cbind<-cbind(km_out_2$cluster, cluster_wkend)
+cluster_wkend1<-cluster_wkend_cbind%>%filter(km_out_2$cluster==1)
+cluster_wkend2<-cluster_wkend_cbind%>%filter(km_out_2$cluster==2)
+cluster_wkend3<-cluster_wkend_cbind%>%filter(km_out_2$cluster==3)
+```
+
+
+```{r}
+names(cluster_wkend_cbind)[1]<-'cluster_no'
+cluster_wkend_cbind$cluster_no<-as.factor(cluster_wkend_cbind$cluster_no)
+cluster_wkend_cbind %>%
+  ggplot( aes(x=as.factor(Item_Type),fill=cluster_no)) + facet_wrap(~ cluster_no) +
+    geom_bar(stat = 'count',alpha=0.8, position = 'identity', binwidth = 0.5) +
+    scale_fill_manual(values = cookiecol[c(5,1,7)]) +
+    theme_minimal() 
+
+```
+
+```{r,fig.height=5}
+p1<-cluster_wkend1 %>%
+  ggplot(aes(x=as.factor(Item_Type))) +
+    geom_bar(stat = 'count',alpha=0.6, position = 'identity', fill=cookiecol[5]) +
+    theme_minimal() 
+p2<-cluster_wkend1 %>%
+ ggplot(aes(x=Hour)) +
+    geom_density(color=cookiecol[5], fill=cookiecol[5], alpha=0.6, position = 'identity') +
+    theme_minimal() 
+p3<-cluster_wkend1 %>%
+  ggplot(aes(x=as.factor(Holiday))) +
+    geom_bar(stat = 'count',alpha=0.6, position = 'identity', fill=cookiecol[5]) +
+    theme_minimal() 
+p4<-cluster_wkend1 %>%
+ ggplot(aes(x=temp)) +
+    geom_density(color=cookiecol[5], fill=cookiecol[5], alpha=0.6, position = 'identity') +
+    theme_minimal() 
+p5<-cluster_wkend1 %>%
+ ggplot(aes(x=wspd)) +
+    geom_density(color=cookiecol[5], fill=cookiecol[5], alpha=0.6, position = 'identity') +
+    theme_minimal() 
+p6<-cluster_wkend1 %>%
+ ggplot(aes(x=rhum)) +
+    geom_density(color=cookiecol[5], fill=cookiecol[5], alpha=0.6, position = 'identity') +
+    theme_minimal() 
+grid.arrange(p1,p2,p3,p4,p5,p6, nrow=4,ncol=2)
+```
+cluster 1 in the weekend data represents (mostly) rush hours in non-holidays with relatively low temperature and low wind speed. The number of transaction in cluster 1 is lower than that in cluster 2. 
+
+
+```{r,fig.height=7}
+p1<-cluster_wkend2 %>%
+  ggplot(aes(x=as.factor(Item_Type))) +
+    geom_bar(stat = 'count',alpha=0.6, position = 'identity', fill=cookiecol[1]) +
+    theme_minimal() 
+p2<-cluster_wkend2 %>%
+ ggplot(aes(x=Hour)) +
+    geom_density(color=cookiecol[1], fill=cookiecol[1], alpha=0.6, position = 'identity') +
+    theme_minimal() 
+p3<-cluster_wkend2 %>%
+  ggplot(aes(x=as.factor(Holiday))) +
+    geom_bar(stat = 'count',alpha=0.6, position = 'identity', fill=cookiecol[1]) +
+    theme_minimal() 
+p4<-cluster_wkend2 %>%
+ ggplot(aes(x=temp)) +
+    geom_density(color=cookiecol[1], fill=cookiecol[1], alpha=0.6, position = 'identity') +
+    theme_minimal() 
+p5<-cluster_wkend2 %>%
+ ggplot(aes(x=wspd)) +
+    geom_density(color=cookiecol[1], fill=cookiecol[1], alpha=0.6, position = 'identity') +
+    theme_minimal() 
+p6<-cluster_wkend2 %>%
+ ggplot(aes(x=rhum)) +
+    geom_density(color=cookiecol[1], fill=cookiecol[1], alpha=0.6, position = 'identity') +
+    theme_minimal() 
+p7<-cluster_wkend2 %>%
+ ggplot(aes(x=Hour)) +
+    geom_density(color=cookiecol[5], fill=cookiecol[5], alpha=0.6, position = 'identity') +
+    theme_minimal() 
+grid.arrange(p1,p2,p3,p4,p5,p6, nrow=3,ncol=2)
+```
+cluster 2 in the weekend data represents (mostly) rush hours in non-holidays with relatively high temperature, high wind speed and high humidity. The number of transaction in cluster 2 is highest among all transactions. 
+
+Comparing cluster 2 and cluster 1 which both contain data in (mostly) rush hours in non-holidays, cluster 2 has higher number of transactions probably due to higher temperature, even though the wind speed is higher. 
+
+
+```{r,fig.height=7}
+p1<-cluster_wkend3 %>%
+  ggplot(aes(x=as.factor(Item_Type))) +
+    geom_bar(stat = 'count',alpha=0.8, position = 'identity', fill=cookiecol[7]) +
+    theme_minimal() 
+p2<-cluster_wkend3 %>%
+  ggplot(aes(x=Hour)) +
+    geom_density(color=cookiecol[7], fill=cookiecol[7], alpha=0.8, position = 'identity') +
+    theme_minimal() 
+p3<-cluster_wkend3 %>%
+  ggplot(aes(x=as.factor(Holiday))) +
+    geom_bar(stat = 'count',alpha=0.8, position = 'identity', fill=cookiecol[7]) +
+    theme_minimal() 
+p4<-cluster_wkend3 %>%
+ ggplot(aes(x=temp)) +
+    geom_density(color=cookiecol[7], fill=cookiecol[7], alpha=0.8, position = 'identity') +
+    theme_minimal() 
+p5<-cluster_wkend3 %>%
+ ggplot(aes(x=wspd)) +
+    geom_density(color=cookiecol[7], fill=cookiecol[7], alpha=0.8, position = 'identity') +
+    theme_minimal() 
+p6<-cluster_wkend3 %>%
+ ggplot(aes(x=rhum)) +
+    geom_density(color=cookiecol[7], fill=cookiecol[7], alpha=0.8, position = 'identity') +
+    theme_minimal() 
+grid.arrange(p1,p2,p3,p4,p5,p6, nrow=3,ncol=2)
+```
+Cluster 3 in weekends data represents holiday data. The number of transaction in this cluster is the least. 
+
+In conclusions, in non-holidays, temperature seems to be more important than wind speed to number of transactions. Holiday season tends to have lower sales since the bakery is closed on holidays. We need more data to get insights to holiday information. 
+
+
+**Weekday**
+
+```{r}
+library(amap)
+d <- Dist(cluster_wkday_scale, method = "correlation")
+hc.complete<- hclust(d, method="complete")
+plot(hc.complete, cex = 1, hang = -1)
+rect.hclust(hc.complete, k = 5, border = 2:6)
+
+```
+
+```{r}
+d <- Dist(cluster_wkend_scale, method = "correlation")
+hc.complete <- hclust(d, method="complete")
+plot(hc.complete, cex = 1, hang = -1)
+rect.hclust(hc.complete, k = 5, border = 2:6)
+
+```
+
+```{r}
+fviz_nbclust(cluster_wkday_scale, hcut, method = "wss") +
+  labs(subtitle = "Elbow method")
+fviz_nbclust(cluster_wkday_scale, hcut, method = "silhouette") +
+  labs(subtitle = "Silhouette method")
+
+
+```
+
+
+```{r}
+fviz_nbclust(cluster_wkend_scale, hcut, method = "wss") +
+  labs(subtitle = "Elbow method")
+fviz_nbclust(cluster_wkend_scale, hcut, method = "silhouette") +
+  labs(subtitle = "Silhouette method")
+
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
 
 In general, one of the clusters focuses on the transactions out of the rush hours. The other two clusters are split based on weather conditions. One thing worth-noting is that the center of one cluster has humidity equals to 91. In other words, that clusters most likely contains the rush hour transactions during raining days.
 
