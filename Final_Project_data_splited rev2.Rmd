@@ -1036,6 +1036,7 @@ transactions_Item <- as(mba_wkday$basket, "transactions")
 
 # Set the threshold low to identify more rules
 # Set minlen = 2 to make sure there are items in LHS
+
 rules_Item <- apriori(transactions_Item, 
                  parameter = list(support = 0.005, 
                                   confidence = 0.25,
@@ -1049,15 +1050,14 @@ rules_Item <- rules_Item[!is.redundant(rules_Item)]
 rules_Item_dt_wkday <- data.table( lhs = labels( lhs(rules_Item) ), 
                         rhs = labels( rhs(rules_Item) ), 
                         quality(rules_Item) )[ order(-lift), ]
-#rules_Item_dt_wkday%>%filter(lift>1)
-head(rules_Item_dt_wkday, 20)
 
+kable(head(rules_Item_dt_wkday, 20))
 
 
 ```
 
 ```{r}
-subrules2 <- head(sort(rules_Item, by = "lift"), 10)
+subrules2 <- head(sort(rules_Item, by = "lift"), 20)
 ig <- plot( subrules2, method="graph",
             control=list(type="items") )
 
@@ -1121,7 +1121,7 @@ Based on the above, maybe we could recommend the bakery, for weekdays:
 
 1. To create bundles sales for drinks and sandwiches
 
-2. To create bundles sales for mulitple drinks and cookies or cakes
+2. To create bundles sales for multiple drinks and cookies or cakes
 
 3. To create bundles sales for lunch and tea
 
@@ -1149,9 +1149,8 @@ rules_Item_wkend <- rules_Item_wkend[!is.redundant(rules_Item_wkend)]
 rules_Item_dt_wkend <- data.table( lhs = labels( lhs(rules_Item_wkend) ), 
                         rhs = labels( rhs(rules_Item_wkend) ), 
                         quality(rules_Item_wkend) )[ order(-lift), ]
-#rules_Item_dt_wkend%>%filter(lift>1)
-head(rules_Item_dt_wkend, 20)
-#rules_Item_dt
+
+kable(head(rules_Item_dt_wkend, 10))
 
 
 ```
@@ -1237,67 +1236,6 @@ grid.arrange(p3,p4, p5,p6,
 ```
 From the figures above, coffee and hot chocolate are sold more in the morning, as opposed to tea and hot chocolate. Sales of cake peak in the afternoon. It is likely that in weekends, people hang out together at the bakery to get the cake and multiple drinks. The bakery could make a special weekend afternoon combo for cake and drinks.
 
-To further explore the top association between Farm House and Medialuna, we plot the distribution of these two items by hours.
-
-```{r}
-p1<-mba_wkend%>%filter(Item=='Medialuna')%>%
-  group_by(as.factor(Hour))%>%
-  mutate(Avg_No_of_transaction = length(unique(Transaction))/length(unique(mba_wkend$Transaction))) %>%
-  ggplot(aes(x = as.factor(Hour), y = Avg_No_of_transaction, fill = as.factor(Hour))) +
-  geom_bar(stat = 'identity',alpha=0.8) +
-  labs(title = 'Average Number of Transactions of Medialuna by Hour',
-       x = 'Hours', y = 'Avg No. of Transaction') +
-  scale_fill_manual(values = colorRampPalette(c('#ecc78d','#2e0a05'))(nb.cols)) +
-  theme_minimal() +
-  theme(legend.position = "none",
-plot.title = element_text(size=8),
-axis.title.x = element_text(size=8),
-axis.title.y = element_text(size=8)
-)
-
-p2<-mba_wkend%>%filter(Item=='Farm House')%>%
-  group_by(as.factor(Hour))%>%
-  mutate(Avg_No_of_transaction = length(unique(Transaction))/length(unique(mba_wkend$Transaction))) %>%
-  ggplot(aes(x = as.factor(Hour), y = Avg_No_of_transaction, fill = as.factor(Hour))) +
-  geom_bar(stat = 'identity',alpha=0.8) +
-  labs(title = 'Average Number of Transactions of Farm House by Hour',
-       x = 'Hours', y = 'Avg No. of Transaction') +
-  scale_fill_manual(values = colorRampPalette(c('#ecc78d','#2e0a05'))(nb.cols)) +
-  theme_minimal() +
-  theme(legend.position = "none",
-plot.title = element_text(size=8),
-axis.title.x = element_text(size=8),
-axis.title.y = element_text(size=8)
-)
-
-grid.arrange(p1, p2,
-             nrow=1,ncol=2,
-             top = textGrob("Average Transaction Frequency by Hours",
-                            gp=gpar(fontsize=14,font=3)))
-```
-
-It is obvious from the figure above that these two items are purchased in the mornings as breakfast. 
-- To encourage more sales of these two items in the afternoons, maybe include them as an option in the combo with the cake and drinks.
-
-```{r}
-mba_wkend%>%filter(Item=='Pastry')%>%
-  group_by(as.factor(Hour))%>%
-  mutate(Avg_No_of_transaction = length(unique(Transaction))/length(unique(mba_wkend$Transaction))) %>%
-  ggplot(aes(x = as.factor(Hour), y = Avg_No_of_transaction, fill = as.factor(Hour))) +
-  geom_bar(stat = 'identity',alpha=0.8) +
-  labs(title = 'Average Number of Transactions of Pastry by Hour',
-       x = 'Hours', y = 'Avg No. of Transaction') +
-  scale_fill_manual(values = colorRampPalette(c('#ecc78d','#2e0a05'))(nb.cols)) +
-  theme_minimal() +
-  theme(legend.position = "none",
-plot.title = element_text(size=8),
-axis.title.x = element_text(size=8),
-axis.title.y = element_text(size=8)
-)
-
-```
-
-Finally, we also explore the distribution of the sales of Pastry by hours since Pastry is also often associated with coffee and hot chocolate. Just as Medialuna, pastry is also often bought in the mornings. To boost the sales of pastry in the afternoons, we also recommend including pastry with the afternoon combo set with cake and drinks. Or since hot chocolate is often bought in the afternoons, we could also recommend creating combos of hot chocolate and pastry to encourage its sales in the afternoons.  
 
 Based on the observations, the recommendations to the bakery would be:
 
@@ -1383,7 +1321,7 @@ Both figures suggest that the best K should be 2. So we will start with k = 2.
 km_out_2 <- kmeans(cluster_wkend, 2, nstart = 25)
 
 fviz_cluster(km_out_2, cluster_wkend, geom = 'point', ellipse.type = 'norm',
-             main = 'Weekday Dataset: K-Means Clustering Results with K=2')
+             main = 'Weekend Dataset: K-Means Clustering Results with K=2')
 
 ```
 
