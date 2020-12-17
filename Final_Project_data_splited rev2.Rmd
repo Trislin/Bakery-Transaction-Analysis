@@ -1260,7 +1260,7 @@ fviz_nbclust(
   kmeans,
   k.max = 10,
   method = "wss"
-)
+) + ggtitle ("Elbow Method")
 
 
 fviz_nbclust(
@@ -1268,7 +1268,7 @@ fviz_nbclust(
   kmeans,
   k.max = 10,
   method = "silhouette"
-)
+) + ggtitle ("Silhouette Method")
 
 ```
 
@@ -1279,7 +1279,10 @@ set.seed(0)
 km_out_2 <- kmeans(cluster_wkday_scale, 4, nstart = 25)
 
 fviz_cluster(km_out_2, cluster_wkday_scale, geom = 'point', ellipse.type = 'norm',
-             main = 'Weekday Dataset: K-Means Clustering Results with K=4')
+             main = 'Weekday Dataset: K-Means Clustering Results with K=4') + 
+    scale_fill_manual(values = cookiecol[c(7,5,1,4)]) +
+  scale_color_manual(values = cookiecol[c(7,5,1,4)]) + 
+  theme_minimal()
 
 ```
 
@@ -1492,7 +1495,7 @@ fviz_nbclust(
   kmeans,
   k.max = 10,
   method = "wss"
-)
+) + ggtitle ("Elbow Method")
 
 
 fviz_nbclust(
@@ -1500,7 +1503,7 @@ fviz_nbclust(
   kmeans,
   k.max = 10,
   method = "silhouette"
-)
+) + ggtitle ("Silhouette Method")
 
 ```
 
@@ -1511,7 +1514,10 @@ set.seed(0)
 km_out_2 <- kmeans(cluster_wkend_scale, 3, nstart = 25)
 
 fviz_cluster(km_out_2, cluster_wkend_scale, geom = 'point', ellipse.type = 'norm',
-             main = 'Weekend Dataset: K-Means Clustering Results with K=3')
+             main = 'Weekend Dataset: K-Means Clustering Results with K=3') + 
+  scale_fill_manual(values = cookiecol[c(5,1,7)]) +
+  scale_color_manual(values = cookiecol[c(5,1,7)]) + 
+  theme_minimal()
 
 ```
 
@@ -1537,36 +1543,30 @@ cluster_wkend_cbind %>%
   ggplot( aes(x=as.factor(Item_Type),fill=cluster_no)) + facet_wrap(~ cluster_no) +
     geom_bar(stat = 'count',alpha=0.8, position = 'identity', binwidth = 0.5) +
     scale_fill_manual(values = cookiecol[c(5,1,7)]) +
+    xlab('Item Type') + 
+    ylab('Number of Transactions') + 
     theme_minimal() 
 
 ```
 
 ```{r,fig.height=5}
 p1<-cluster_wkend1 %>%
-  ggplot(aes(x=as.factor(Item_Type))) +
-    geom_bar(stat = 'count',alpha=0.6, position = 'identity', fill=cookiecol[5]) +
-    theme_minimal() 
-p2<-cluster_wkend1 %>%
  ggplot(aes(x=Hour)) +
     geom_density(color=cookiecol[5], fill=cookiecol[5], alpha=0.6, position = 'identity') +
     theme_minimal() 
-p3<-cluster_wkend1 %>%
-  ggplot(aes(x=as.factor(Holiday))) +
-    geom_bar(stat = 'count',alpha=0.6, position = 'identity', fill=cookiecol[5]) +
-    theme_minimal() 
-p4<-cluster_wkend1 %>%
+p2<-cluster_wkend1 %>%
  ggplot(aes(x=temp)) +
     geom_density(color=cookiecol[5], fill=cookiecol[5], alpha=0.6, position = 'identity') +
     theme_minimal() 
-p5<-cluster_wkend1 %>%
+p3<-cluster_wkend1 %>%
  ggplot(aes(x=wspd)) +
     geom_density(color=cookiecol[5], fill=cookiecol[5], alpha=0.6, position = 'identity') +
     theme_minimal() 
-p6<-cluster_wkend1 %>%
+p4<-cluster_wkend1 %>%
  ggplot(aes(x=rhum)) +
     geom_density(color=cookiecol[5], fill=cookiecol[5], alpha=0.6, position = 'identity') +
     theme_minimal() 
-grid.arrange(p1,p2,p3,p4,p5,p6, nrow=4,ncol=2)
+grid.arrange(p1,p2,p3,p4, nrow=2,ncol=2)
 ```
 cluster 1 in the weekend data represents (mostly) rush hours in non-holidays with relatively low temperature and low wind speed. The number of transaction in cluster 1 is lower than that in cluster 2. 
 
@@ -1638,73 +1638,62 @@ Cluster 3 in weekends data represents holiday data. The number of transaction in
 
 In conclusions, in non-holidays, temperature seems to be more important than wind speed to number of transactions. Holiday season tends to have lower sales since the bakery is closed on holidays. We need more data to get insights to holiday information. 
 
-
-**Weekday**
-
+to better visualize the comparison of cluster 1 and cluster 2: 
 ```{r}
-library(amap)
-d <- Dist(cluster_wkday_scale, method = "correlation")
-hc.complete<- hclust(d, method="complete")
-plot(hc.complete, cex = 1, hang = -1)
-rect.hclust(hc.complete, k = 5, border = 2:6)
+cluster_wkend_cbind$cluster_no<-as.factor(cluster_wkend_cbind$cluster_no)
+p1<-cluster_wkend_cbind %>%
+  filter(cluster_no%in%c(1,2)) %>%
+  ggplot(aes(x=Hour, fill=cluster_no)) + 
+    geom_density( color="#e9ecef", alpha=0.8, position = 'identity') +
+    scale_fill_manual(values = cookiecol[c(5,1)]) +
+    theme_minimal() +
+    labs(fill="") 
+
+p2<-cluster_wkend_cbind %>%
+  filter(cluster_no%in%c(1,2)) %>%
+  ggplot(aes(x=temp, fill=cluster_no)) + 
+    geom_density( color="#e9ecef", alpha=0.8, position = 'identity') +
+    scale_fill_manual(values = cookiecol[c(5,1)]) +
+    theme_minimal() +
+    labs(fill="") +
+    xlab('Temperature') 
+
+p3<-cluster_wkend_cbind %>%
+  filter(cluster_no%in%c(1,2)) %>%
+  ggplot(aes(x=wspd, fill=cluster_no)) + 
+    geom_density( color="#e9ecef", alpha=0.8, position = 'identity') +
+    scale_fill_manual(values = cookiecol[c(5,1)]) +
+    theme_minimal() +
+    labs(fill="") +
+    xlab('Wind Speed') 
+
+p4<-cluster_wkend_cbind %>%
+  filter(cluster_no%in%c(1,2)) %>%
+  ggplot(aes(x=rhum, fill=cluster_no)) + 
+    geom_density( color="#e9ecef", alpha=0.8, position = 'identity') +
+    scale_fill_manual(values = cookiecol[c(5,1)]) +
+    theme_minimal() +
+    labs(fill="") +
+    xlab('Humidity') 
+
+grid.arrange(p1,p2,p3,p4,nrow=2,ncol=2)
+
 
 ```
 
-```{r}
-d <- Dist(cluster_wkend_scale, method = "correlation")
-hc.complete <- hclust(d, method="complete")
-plot(hc.complete, cex = 1, hang = -1)
-rect.hclust(hc.complete, k = 5, border = 2:6)
-
-```
-
-```{r}
-fviz_nbclust(cluster_wkday_scale, hcut, method = "wss") +
-  labs(subtitle = "Elbow method")
-fviz_nbclust(cluster_wkday_scale, hcut, method = "silhouette") +
-  labs(subtitle = "Silhouette method")
-
-
-```
-
-
-```{r}
-fviz_nbclust(cluster_wkend_scale, hcut, method = "wss") +
-  labs(subtitle = "Elbow method")
-fviz_nbclust(cluster_wkend_scale, hcut, method = "silhouette") +
-  labs(subtitle = "Silhouette method")
-
-
-```
-
-
-
-
-
-
-
-
-
-
-
-
-
-In general, one of the clusters focuses on the transactions out of the rush hours. The other two clusters are split based on weather conditions. One thing worth-noting is that the center of one cluster has humidity equals to 91. In other words, that clusters most likely contains the rush hour transactions during raining days.
-
-It is difficult to draw recommendations directly from the segment of transactions. However, it provides the insight about the similarity of different transactions.
 
 # 5 Conclusion & Next Steps
 
-In a nutshell, with the bakery transaction data and weather record data, we first explored how different features influencing the number of transactions, especially those weather-related variables. Then we dived into the association rules from the transaction history, identified purchasing patterns, and provided recommendations for the bakery to further increase sales. Lastly we tried to cluster the transactions into different segments, and discussed the initial results.
-
+In a nutshell, with the bakery transaction data and weather record data, we first separated weekdays from weekend. Then we explored how different features influencing the number of transactions, especially those weather-related variables. After that we dived into the association rules from the transaction history, identified purchasing patterns, and provided recommendations for the bakery to further increase sales. In the end we tried to cluster the transactions into different segments, and discussed the initial results.
+ 
 The major next steps of this analysis are:
-
+ 
 1. When predicting the number of transactions, the selected random forest model could only explain 30% - 40% of variance. We will need to either acquire more data beyond Oct 2016 and Apr 2017, or get more new features. Our current features only include date, time, name of items, and weather. If we could manage to get the information of the client, we could further improve our model to perform the prediction task.
-
+ 
 2. The association rules we identified has low support in general. If we could get more data, we might be able to further explore the the possible rules.
-
-3. We could dive deeper into the clustering analysis, to further explore the similarities of transactions within the same cluster.
-
+ 
+3. We could dive deeper into the clustering analysis, to further explore the similarities of transactions within the same cluster. If we could acquire more features, such as the demographic information about the client, we could further explore the clustering analysis and eventually turn the findings into executable actions to the bakery.
+ 
 4. Whether a day is a public holiday or not is not significant in any of our analysis. Part of the reason is that our dataset only lasts 6 months. If we could acquire more data, covering several years, we could further explore the impact of holiday on the sales of the bakery.
 
 
