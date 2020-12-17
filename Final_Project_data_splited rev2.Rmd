@@ -32,6 +32,7 @@ library(tree)
 library(factoextra)
 library(cluster)
 library(arulesViz)
+library(DMwR)
 
 nb.cols <- 18
 mycolors <- colorRampPalette(brewer.pal(8, "Blues"))(nb.cols)
@@ -1253,8 +1254,10 @@ In this section, we will explore the different clusters of transactions, if ther
 **Weekday**
 ```{r}
 
+cluster_wkday_scale = scale(cluster_wkday)
+
 fviz_nbclust(
-  cluster_wkday,
+  cluster_wkday_scale,
   kmeans,
   k.max = 10,
   method = "wss"
@@ -1262,7 +1265,7 @@ fviz_nbclust(
 
 
 fviz_nbclust(
-  cluster_wkday,
+  cluster_wkday_scale,
   kmeans,
   k.max = 10,
   method = "silhouette"
@@ -1270,35 +1273,35 @@ fviz_nbclust(
 
 ```
 
-Both figures suggest that the best K should be 2. So we will start with k = 2.
+Both figures suggest that the best K should be 6. However, after trying several different K, we decide to go with K = 3.
 
 ```{r}
 
-km_out_2 <- kmeans(cluster_wkday, 2, nstart = 25)
+km_out_2 <- kmeans(cluster_wkday_scale, 3, nstart = 25)
 
-fviz_cluster(km_out_2, cluster_wkday, geom = 'point', ellipse.type = 'norm',
-             main = 'Weekday Dataset: K-Means Clustering Results with K=2')
+fviz_cluster(km_out_2, cluster_wkday_scale, geom = 'point', ellipse.type = 'norm',
+             main = 'Weekday Dataset: K-Means Clustering Results with K=3')
 
 ```
 
-Apparently, PCA might not be the ideal way to extract the features for visualization. The first and second principle components together could only explain 37% of variance.
-
-Then to understand how well we split the transactions into two clusters, here we compare the centers of the clusters.
+Using PCA, we are able to visualize the clusters in a 2-D plane. Then to understand how well we split the transactions into two clusters, here we compare the centers of the clusters.
 
 ```{r}
-km_out_2$centers
+unscale(km_out_2$centers, cluster_wkday_scale)
 
 ```
 
-The major difference between the center of two clusters is the direction of wind. This is difficult to explain and therefore we doubt whether the current clustering makes sense.
+In general, one of the clusters only contains the non-rush hour transactions. Then the other two clusters seem to be split based on weather conditions, including humidity, wind direction and wind speed.
 
 ### 4.3.2 Clustering on Weekend Dataset
 
 **Weekend**
 
 ```{r}
+cluster_wkend_scale = scale(cluster_wkend)
+
 fviz_nbclust(
-  cluster_wkend,
+  cluster_wkend_scale,
   kmeans,
   k.max = 10,
   method = "wss"
@@ -1306,7 +1309,7 @@ fviz_nbclust(
 
 
 fviz_nbclust(
-  cluster_wkend,
+  cluster_wkend_scale,
   kmeans,
   k.max = 10,
   method = "silhouette"
@@ -1314,33 +1317,31 @@ fviz_nbclust(
 
 ```
 
-Both figures suggest that the best K should be 2. So we will start with k = 2.
+Both figures suggest that the best K should be 8. However, after trying several differnt K, we select K = 3.
 
 ```{r}
 
-km_out_2 <- kmeans(cluster_wkend, 2, nstart = 25)
+km_out_2 <- kmeans(cluster_wkend_scale, 3, nstart = 25)
 
-fviz_cluster(km_out_2, cluster_wkend, geom = 'point', ellipse.type = 'norm',
-             main = 'Weekend Dataset: K-Means Clustering Results with K=2')
+fviz_cluster(km_out_2, cluster_wkend_scale, geom = 'point', ellipse.type = 'norm',
+             main = 'Weekend Dataset: K-Means Clustering Results with K=3')
 
 ```
-
-Same as the weekdays dataset, PCA might not be the ideal way to extract the features for visualization. The first and second principle components together could only explain 38% of variance.
 
 Then to understand how well we split the transactions into two clusters, here we compare the centers of the clusters.
 
 ```{r}
-km_out_2$centers
+unscale(km_out_2$centers, cluster_wkend_scale)
 
 ```
 
-Again, the major difference between the center of two clusters is the direction of wind. This is difficult to explain and therefore we doubt whether the current clustering makes sense.
+In general, one of the clusters focuses on the transactions out of the rush hours. The other two clusters are split based on weather conditions. One thing worth-noting is that the center of one cluster has humidity equals to 91. In other words, that clusters most likely contains the rush hour transactions during raining days.
 
-To sum up, we are not able to come up with a meaningful split of transactions into clusters. On one hand, we only tried with k-means. On the other hand, we have very limited features in the original dataset.
+It is difficult to draw recommendations directly from the segment of transactions. However, it provides the insight about the similarity of different transactions.
 
 # 5 Conclusion & Next Steps
 
-In a nutshell, with the bakery transaction data and weather record data, we first explored how different features influencing the number of transactions, especially those weather-related variables. Then we dived into the association rules from the transaction history, identified purchasing patterns, and provided recommendations for the bakery to further increase sales. Lastly we tried to cluster the transactions into different segments, but the result is not satisfying.
+In a nutshell, with the bakery transaction data and weather record data, we first explored how different features influencing the number of transactions, especially those weather-related variables. Then we dived into the association rules from the transaction history, identified purchasing patterns, and provided recommendations for the bakery to further increase sales. Lastly we tried to cluster the transactions into different segments, and discussed the initial results.
 
 The major next steps of this analysis are:
 
@@ -1348,7 +1349,7 @@ The major next steps of this analysis are:
 
 2. The association rules we identified has low support in general. If we could get more data, we might be able to further explore the the possible rules.
 
-3. We will need features to reshape the clustering analysis. Also as next step, we could try other clustering methods, such as GMM or DPGMM.
+3. We could dive deeper into the clustering analysis, to further explore the similarities of transactions within the same cluster.
 
 4. Whether a day is a public holiday or not is not significant in any of our analysis. Part of the reason is that our dataset only lasts 6 months. If we could acquire more data, covering several years, we could further explore the impact of holiday on the sales of the bakery.
 
