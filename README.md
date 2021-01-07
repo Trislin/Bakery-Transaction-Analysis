@@ -14,17 +14,17 @@
 * The cleaned dataset was splitted into weekday and weekend datasets due to different patterns observed. Results from weekend data are illustrated as examples below.
 
 ## Data Analysis I: Market Basket Analysis
-![Which items are often purchased together?](/plot/MBA_weekend.png)
+![Which items are often purchased together?](/plots/MBA_weekend.png)
 
 
 ## Data Analysis II: Random Forest
-![Which features predict the sales?](/plot/rf_imp_var_wkend.png)
+![Which features predict the sales?](/plots/rf_imp_var_wkend.png)
 
 
 
 
 
-![How do different features influence the sales?](/plot/rf_dependence_wkend.png)
+![How do different features influence the sales?](/plots/rf_dependence_wkend.png)
 
 
 
@@ -32,11 +32,11 @@
 
 
 ## Data Analysis III: K-means Clustering
-![What are the optimal number of clusters?](/plot/cluster_wkend.png)
+![What are the optimal number of clusters?](/plots/cluster_wkend.png)
 
 
 
 
 
 
-![What are the characteristics of each cluster?](/plot/cluster_pattern_wkend.png)
+![What are the characteristics of each cluster?](/plots/cluster_pattern_wkend.png)
